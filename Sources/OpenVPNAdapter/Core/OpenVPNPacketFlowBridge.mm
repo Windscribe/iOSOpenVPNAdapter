@@ -7,6 +7,7 @@
 #import "../include/OpenVPNPacket.h"
 #import "../include/OpenVPNAdapter.h"
 #import "../include/OpenVPNAdapterPacketFlow.h"
+#import "../include/OpenVPNLogger.h"
 
 @implementation OpenVPNPacketFlowBridge
 
@@ -73,7 +74,9 @@ static void SocketCallback(CFSocketRef socket, CFSocketCallBackType type, CFData
 - (BOOL)configureOptionsForSocket:(CFSocketRef)socket error:(NSError * __autoreleasing *)error {
     CFSocketNativeHandle socketHandle = CFSocketGetNative(socket);
 
-    int buf_value = 65536;
+    // Increase buffer size to 2MB to handle high packet load
+    // Original OpenVPNAdapter uses 65536 (64KB) which can cause "No buffer space available" errors
+    int buf_value = 2097152; // 2MB instead of 64KB
     socklen_t buf_len = sizeof(buf_value);
 
     if (setsockopt(socketHandle, SOL_SOCKET, SO_RCVBUF, &buf_value, buf_len) == -1) {
