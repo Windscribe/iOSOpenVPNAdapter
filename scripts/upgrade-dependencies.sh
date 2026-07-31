@@ -48,6 +48,12 @@ echo "🔧 Applying patches..."
 
 cd OpenVPN3
 
+# Apply iOS UIKit fix (removes UIKit dependency from C++ code)
+if [ -f "../../../patches/fix-ios-uikit.patch" ]; then
+    git apply ../../../patches/fix-ios-uikit.patch
+    echo "✅ iOS UIKit patch applied (fixes C++ build errors with UIKit headers)"
+fi
+
 # Apply hostname verification fix for mbedTLS
 if [ -f "../../../patches/hostname-verification.patch" ]; then
     git apply ../../../patches/hostname-verification.patch

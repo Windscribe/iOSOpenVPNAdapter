@@ -1,0 +1,31 @@
+diff --git a/openvpn/netconf/hwaddr.hpp b/openvpn/netconf/hwaddr.hpp
+index fcb3916..1593a8e 100644
+--- a/openvpn/netconf/hwaddr.hpp
++++ b/openvpn/netconf/hwaddr.hpp
+@@ -23,8 +23,6 @@
+ #include <openvpn/tun/win/tunutil.hpp>
+ #elif defined(OPENVPN_PLATFORM_MAC)
+ #include <openvpn/tun/mac/gw.hpp>
+-#elif defined(TARGET_OS_IPHONE)
+-#include <UIKit/UIKit.h>
+ #endif
+ 
+ namespace openvpn {
+@@ -49,13 +47,10 @@ inline std::string get_hwaddr([[maybe_unused]] IP::Addr server_addr)
+         const MACAddr &mac = gw.hwaddr();
+         return mac.to_string();
+     }
+-#elif defined(TARGET_OS_IPHONE)
+-    // as reported at https://developer.apple.com/library/content/releasenotes/General/WhatsNewIniOS/Articles/iOS7.html#//apple_ref/doc/uid/TP40013162-SW34
+-    // we can't get the MAC address from iOS for privacy reasons, but we can
+-    // use the UUID as unique identifier. It is unique among the App domain,
+-    // meaning that a different app will get a different UUID from this call
+-    const NSString *uuid = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
+-    return std::string([uuid UTF8String]);
++#elif defined(TARGET_OS_IPHONE) || defined(OPENVPN_PLATFORM_IPHONE)
++    // iOS doesn't allow MAC address access for privacy reasons
++    // Return a placeholder value instead of using UIKit
++    return "00:00:00:00:00:00";
+ #endif
+     return std::string();
+ }
