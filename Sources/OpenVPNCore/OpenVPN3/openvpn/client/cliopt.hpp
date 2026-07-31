@@ -666,6 +666,7 @@ class ClientOptions : public RC<thread_unsafe_refcount>
         "ip-win32",
         "keepalive", /* A push only feature (ping/ping-restart) in v3. Ignore with warning since often present in configs too */
         "link-mtu",
+        "local-proxy", /* Windscribe specific option, not supported in OpenVPN3 */
         "machine-readable-output", /* would be set by a CliOptions */
         "mark",                    /* enables SO_MARK */
         "mute",
