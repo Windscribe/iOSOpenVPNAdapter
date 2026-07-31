@@ -1,0 +1,20 @@
+module OpenVPNAdapter {
+    header "OpenVPNAdapter.h"
+    header "OpenVPNPacketFlowBridge.h"
+    header "OpenVPNLogger.h"
+    header "OpenVPNConfiguration.h"
+    header "OpenVPNConfigurationEvaluation.h"
+    header "OpenVPNCredentials.h"
+    header "OpenVPNConnectionInfo.h"
+    header "OpenVPNInterfaceStats.h"
+    header "OpenVPNTransportStats.h"
+    header "OpenVPNSessionToken.h"
+    header "OpenVPNError.h"
+    header "OpenVPNAdapterEvent.h"
+    header "OpenVPNAdapterPacketFlow.h"
+    header "OpenVPNNetworkSettingsBuilder.h"
+    header "OpenVPNServerEntry.h"
+    header "OpenVPNPacket.h"
+    header "OpenVPNReachability.h"
+    export *
+}
