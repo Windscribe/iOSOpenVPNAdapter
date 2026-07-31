@@ -2,7 +2,7 @@
 // ip/detail/endpoint.hpp
 // ~~~~~~~~~~~~~~~~~~~~~~
 //
-// Copyright (c) 2003-2022 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2003-2024 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -24,11 +24,6 @@
 
 #include "asio/detail/push_options.hpp"
 
-#if defined(ASIO_USE_KOVPN_ROUTE_ID)
-#include <cstdint>
-#include <uapi/ovpn/mark.h>
-#endif
-
 namespace asio {
 namespace ip {
 namespace detail {
@@ -38,43 +33,43 @@ class endpoint
 {
 public:
   // Default constructor.
-  ASIO_DECL endpoint() ASIO_NOEXCEPT;
+  ASIO_DECL endpoint() noexcept;
 
   // Construct an endpoint using a family and port number.
   ASIO_DECL endpoint(int family,
-      unsigned short port_num) ASIO_NOEXCEPT;
+      unsigned short port_num) noexcept;
 
   // Construct an endpoint using an address and port number.
   ASIO_DECL endpoint(const asio::ip::address& addr,
-      unsigned short port_num) ASIO_NOEXCEPT;
+      unsigned short port_num) noexcept;
 
   // Copy constructor.
-  endpoint(const endpoint& other) ASIO_NOEXCEPT
+  endpoint(const endpoint& other) noexcept
     : data_(other.data_)
   {
   }
 
   // Assign from another endpoint.
-  endpoint& operator=(const endpoint& other) ASIO_NOEXCEPT
+  endpoint& operator=(const endpoint& other) noexcept
   {
     data_ = other.data_;
     return *this;
   }
 
   // Get the underlying endpoint in the native type.
-  asio::detail::socket_addr_type* data() ASIO_NOEXCEPT
+  asio::detail::socket_addr_type* data() noexcept
   {
     return &data_.base;
   }
 
   // Get the underlying endpoint in the native type.
-  const asio::detail::socket_addr_type* data() const ASIO_NOEXCEPT
+  const asio::detail::socket_addr_type* data() const noexcept
   {
     return &data_.base;
   }
 
   // Get the underlying size of the endpoint in the native type.
-  std::size_t size() const ASIO_NOEXCEPT
+  std::size_t size() const noexcept
   {
     if (is_v4())
       return sizeof(asio::detail::sockaddr_in4_type);
@@ -86,34 +81,34 @@ public:
   ASIO_DECL void resize(std::size_t new_size);
 
   // Get the capacity of the endpoint in the native type.
-  std::size_t capacity() const ASIO_NOEXCEPT
+  std::size_t capacity() const noexcept
   {
     return sizeof(data_);
   }
 
   // Get the port associated with the endpoint.
-  ASIO_DECL unsigned short port() const ASIO_NOEXCEPT;
+  ASIO_DECL unsigned short port() const noexcept;
 
   // Set the port associated with the endpoint.
-  ASIO_DECL void port(unsigned short port_num) ASIO_NOEXCEPT;
+  ASIO_DECL void port(unsigned short port_num) noexcept;
 
   // Get the IP address associated with the endpoint.
-  ASIO_DECL asio::ip::address address() const ASIO_NOEXCEPT;
+  ASIO_DECL asio::ip::address address() const noexcept;
 
   // Set the IP address associated with the endpoint.
   ASIO_DECL void address(
-      const asio::ip::address& addr) ASIO_NOEXCEPT;
+      const asio::ip::address& addr) noexcept;
 
   // Compare two endpoints for equality.
   ASIO_DECL friend bool operator==(const endpoint& e1,
-      const endpoint& e2) ASIO_NOEXCEPT;
+      const endpoint& e2) noexcept;
 
   // Compare endpoints for ordering.
   ASIO_DECL friend bool operator<(const endpoint& e1,
-      const endpoint& e2) ASIO_NOEXCEPT;
+      const endpoint& e2) noexcept;
 
   // Determine whether the endpoint is IPv4.
-  bool is_v4() const ASIO_NOEXCEPT
+  bool is_v4() const noexcept
   {
     return data_.base.sa_family == ASIO_OS_DEF(AF_INET);
   }
@@ -123,47 +118,6 @@ public:
   ASIO_DECL std::string to_string() const;
 #endif // !defined(ASIO_NO_IOSTREAM)
 
-#if defined(ASIO_USE_KOVPN_ROUTE_ID)
-  int get_route_id() const
-  {
-    if (is_v4())
-      {
-	if (data_.v4_sin_ovpn_magic == SIN_OVPN_MAGIC)
-	  return OVPN_MARK_ROUTE_ID(data_.v4_sin_ovpn_route_id);
-      }
-    else
-      {
-	if ((data_.v6.sin6_flowinfo & htonl(SIN6_FLOWINFO_OVPN_MASK)) == htonl(SIN6_FLOWINFO_OVPN_MAGIC))
-	  return OVPN_MARK_ROUTE_ID(ntohl(data_.v6.sin6_flowinfo));
-      }
-    return -1;
-  }
-
-  void set_route_id(const int route_id)
-  {
-    if (is_v4())
-      {
-	if (route_id >= 0)
-	  {
-	    data_.v4_sin_ovpn_magic = SIN_OVPN_MAGIC;
-	    data_.v4_sin_ovpn_route_id = OVPN_MARK_ROUTE_ID(route_id);
-	  }
-	else
-	  {
-	    data_.v4_sin_ovpn_magic = 0;
-	    data_.v4_sin_ovpn_route_id = 0;
-	  }
-      }
-    else
-      {
-	if (route_id >= 0)
-	  data_.v6.sin6_flowinfo = htonl(OVPN_MARK_ROUTE_ID(route_id) | SIN6_FLOWINFO_OVPN_MAGIC);
-	else
-	  data_.v6.sin6_flowinfo = 0;
-      }
-  }
-#endif
-
 private:
   // The underlying IP socket address.
   union data_union
@@ -171,15 +125,6 @@ private:
     asio::detail::socket_addr_type base;
     asio::detail::sockaddr_in4_type v4;
     asio::detail::sockaddr_in6_type v6;
-#if defined(ASIO_USE_KOVPN_ROUTE_ID)
-    struct {
-      std::uint8_t head_[8];
-
-      // mirrors definition in <linux-kernel>/include/uapi/linux/in.h
-      std::uint32_t v4_sin_ovpn_magic;
-      std::uint32_t v4_sin_ovpn_route_id;
-    };
-#endif
   } data_;
 };
 

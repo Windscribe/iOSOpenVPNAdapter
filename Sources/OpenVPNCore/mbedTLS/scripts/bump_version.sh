@@ -15,6 +15,7 @@
 set -e
 
 VERSION=""
+SOVERSION=""
 
 # Parse arguments
 #
@@ -51,7 +52,7 @@ do
       echo -e "  --so-x509 <version>\tSO version to bump libmbedx509 to."
       echo -e "  --so-tls <version>\tSO version to bump libmbedtls to."
       echo -e "  -v|--verbose\t\tVerbose."
-      exit 0
+      exit 1
       ;;
     *)
       # print error

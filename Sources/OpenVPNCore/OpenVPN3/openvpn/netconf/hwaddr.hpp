@@ -21,9 +21,10 @@
 
 #if defined(OPENVPN_PLATFORM_WIN) && !defined(OPENVPN_PLATFORM_UWP)
 #include <openvpn/tun/win/tunutil.hpp>
-#elif defined(OPENVPN_PLATFORM_IPHONE) || defined(TARGET_OS_IPHONE)
-// UIKit cannot be included in C++ files, only in Objective-C
-// iOS/tvOS don't allow MAC address access for privacy reasons
+#elif defined(OPENVPN_PLATFORM_MAC)
+#include <openvpn/tun/mac/gw.hpp>
+#elif defined(TARGET_OS_IPHONE)
+#include <UIKit/UIKit.h>
 #endif
 
 namespace openvpn {
@@ -41,12 +42,20 @@ inline std::string get_hwaddr([[maybe_unused]] IP::Addr server_addr)
             return mac.to_string();
         }
     }
-#elif defined(OPENVPN_PLATFORM_IPHONE) || defined(TARGET_OS_IPHONE)
+#elif defined(OPENVPN_PLATFORM_MAC)
+    const MacGatewayInfo gw{server_addr};
+    if (gw.hwaddr_defined())
+    {
+        const MACAddr &mac = gw.hwaddr();
+        return mac.to_string();
+    }
+#elif defined(TARGET_OS_IPHONE)
     // as reported at https://developer.apple.com/library/content/releasenotes/General/WhatsNewIniOS/Articles/iOS7.html#//apple_ref/doc/uid/TP40013162-SW34
-    // we can't get the MAC address from iOS/tvOS for privacy reasons
-    // Return a placeholder value since we can't access UIDevice from C++
-    // The actual device ID can be obtained from the Objective-C bridge if needed
-    return "00:00:00:00:00:00";
+    // we can't get the MAC address from iOS for privacy reasons, but we can
+    // use the UUID as unique identifier. It is unique among the App domain,
+    // meaning that a different app will get a different UUID from this call
+    const NSString *uuid = [[[UIDevice currentDevice] identifierForVendor] UUIDString];
+    return std::string([uuid UTF8String]);
 #endif
     return std::string();
 }

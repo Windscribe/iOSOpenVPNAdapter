@@ -17,11 +17,13 @@
 
 #if defined(MBEDTLS_THREADING_C)
 
-#include "threading_internal.h"
+#include "mbedtls/threading.h"
 
 #if defined(MBEDTLS_HAVE_TIME_DATE) && !defined(MBEDTLS_PLATFORM_GMTIME_R_ALT)
 
-#if defined(MBEDTLS_PLATFORM_IS_UNIXLIKE)
+#if !defined(_WIN32) && (defined(unix) || \
+    defined(__unix) || defined(__unix__) || (defined(__APPLE__) && \
+    defined(__MACH__)))
 #include <unistd.h>
 #endif /* !_WIN32 && (unix || __unix || __unix__ ||
         * (__APPLE__ && __MACH__)) */
@@ -59,7 +61,7 @@ static void threading_mutex_init_pthread(mbedtls_threading_mutex_t *mutex)
      * this here in a thread safe manner without a significant performance
      * hit, so state transitions are checked in tests only via the state
      * variable. Please make sure any new mutex that gets added is exercised in
-     * tests; see framework/tests/src/threading_helpers.c for more details. */
+     * tests; see tests/src/threading_helpers.c for more details. */
     (void) pthread_mutex_init(&mutex->mutex, NULL);
 }
 

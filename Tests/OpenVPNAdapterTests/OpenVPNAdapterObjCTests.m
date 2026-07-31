@@ -45,11 +45,11 @@
 }
 
 - (void)testLoggerSingleton {
-    OpenVPNLogger *logger = [OpenVPNLogger shared];
+    OpenVPNLogger *logger = [OpenVPNLogger sharedLogger];
     XCTAssertNotNil(logger);
 
-    logger.logLevel = OpenVPNLogLevelDebug;
-    XCTAssertEqual(logger.logLevel, OpenVPNLogLevelDebug);
+    logger.minimumLevel = OpenVPNLogLevelDebug;
+    XCTAssertEqual(logger.minimumLevel, OpenVPNLogLevelDebug);
 }
 
 - (void)testPacketFlowBridge {
@@ -61,8 +61,9 @@
     OpenVPNNetworkSettingsBuilder *builder = [[OpenVPNNetworkSettingsBuilder alloc] init];
     XCTAssertNotNil(builder);
 
-    BOOL result = [builder addDNS:@"8.8.8.8"];
-    XCTAssertTrue(result);
+    [builder.dnsServers addObject:@"8.8.8.8"];
+    XCTAssertEqual(builder.dnsServers.count, 1);
+    XCTAssertEqualObjects(builder.dnsServers[0], @"8.8.8.8");
 }
 
 @end

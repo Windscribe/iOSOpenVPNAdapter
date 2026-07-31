@@ -131,16 +131,12 @@ int mbedtls_x25519_calc_secret( mbedtls_x25519_context *ctx, size_t *olen,
     if( blen < *olen )
         return( MBEDTLS_ERR_ECP_BUFFER_TOO_SMALL );
 
-    /* scalarmult modifies this input, let's make a copy... */
-    unsigned char secret[MBEDTLS_X25519_KEY_SIZE_BYTES];
-    memcpy(secret, ctx->our_secret, sizeof(secret));
+    Hacl_Curve25519_crypto_scalarmult( buf, ctx->our_secret, ctx->peer_point);
 
-    Hacl_Curve25519_crypto_scalarmult( buf, secret, ctx->peer_point);
+    /* Wipe the DH secret and don't let the peer chose a small subgroup point */
+    mbedtls_platform_zeroize( ctx->our_secret, MBEDTLS_X25519_KEY_SIZE_BYTES );
 
-    /* Wipe the copy and don't let the peer choose a small subgroup point */
-    mbedtls_platform_zeroize( secret, MBEDTLS_X25519_KEY_SIZE_BYTES );
-
-    if( memcmp( buf, secret, MBEDTLS_X25519_KEY_SIZE_BYTES) == 0 )
+    if( memcmp( buf, ctx->our_secret, MBEDTLS_X25519_KEY_SIZE_BYTES) == 0 )
         return MBEDTLS_ERR_ECP_RANDOM_FAILED;
 
     return( 0 );

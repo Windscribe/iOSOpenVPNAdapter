@@ -1300,14 +1300,6 @@ int query_config(const char *config)
     }
 #endif /* MBEDTLS_SSL_ASYNC_PRIVATE */
 
-#if defined(MBEDTLS_SSL_CLI_ALLOW_WEAK_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME)
-    if( strcmp( "MBEDTLS_SSL_CLI_ALLOW_WEAK_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_SSL_CLI_ALLOW_WEAK_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME );
-        return( 0 );
-    }
-#endif /* MBEDTLS_SSL_CLI_ALLOW_WEAK_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME */
-
 #if defined(MBEDTLS_SSL_CONTEXT_SERIALIZATION)
     if( strcmp( "MBEDTLS_SSL_CONTEXT_SERIALIZATION", config ) == 0 )
     {
@@ -1347,14 +1339,6 @@ int query_config(const char *config)
         return( 0 );
     }
 #endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
-
-#if defined(MBEDTLS_SSL_KEYING_MATERIAL_EXPORT)
-    if( strcmp( "MBEDTLS_SSL_KEYING_MATERIAL_EXPORT", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_SSL_KEYING_MATERIAL_EXPORT );
-        return( 0 );
-    }
-#endif /* MBEDTLS_SSL_KEYING_MATERIAL_EXPORT */
 
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
     if( strcmp( "MBEDTLS_SSL_RENEGOTIATION", config ) == 0 )
@@ -1956,14 +1940,6 @@ int query_config(const char *config)
     }
 #endif /* MBEDTLS_PKCS7_C */
 
-#if defined(MBEDTLS_PKCS7_ALLOW_WEAK_SIGNATURES)
-    if( strcmp( "MBEDTLS_PKCS7_ALLOW_WEAK_SIGNATURES", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_PKCS7_ALLOW_WEAK_SIGNATURES );
-        return( 0 );
-    }
-#endif /* MBEDTLS_PKCS7_ALLOW_WEAK_SIGNATURES */
-
 #if defined(MBEDTLS_PKCS12_C)
     if( strcmp( "MBEDTLS_PKCS12_C", config ) == 0 )
     {
@@ -2019,14 +1995,6 @@ int query_config(const char *config)
         return( 0 );
     }
 #endif /* MBEDTLS_PSA_ITS_FILE_C */
-
-#if defined(MBEDTLS_PSA_STATIC_KEY_SLOTS)
-    if( strcmp( "MBEDTLS_PSA_STATIC_KEY_SLOTS", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_PSA_STATIC_KEY_SLOTS );
-        return( 0 );
-    }
-#endif /* MBEDTLS_PSA_STATIC_KEY_SLOTS */
 
 #if defined(MBEDTLS_RIPEMD160_C)
     if( strcmp( "MBEDTLS_RIPEMD160_C", config ) == 0 )
@@ -2676,14 +2644,6 @@ int query_config(const char *config)
     }
 #endif /* MBEDTLS_PRINTF_MS_TIME */
 
-#if defined(MBEDTLS_PLATFORM_DEV_RANDOM)
-    if( strcmp( "MBEDTLS_PLATFORM_DEV_RANDOM", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_PLATFORM_DEV_RANDOM );
-        return( 0 );
-    }
-#endif /* MBEDTLS_PLATFORM_DEV_RANDOM */
-
 #if defined(MBEDTLS_CHECK_RETURN)
     if( strcmp( "MBEDTLS_CHECK_RETURN", config ) == 0 )
     {
@@ -2715,14 +2675,6 @@ int query_config(const char *config)
         return( 0 );
     }
 #endif /* MBEDTLS_PSA_KEY_SLOT_COUNT */
-
-#if defined(MBEDTLS_PSA_STATIC_KEY_SLOT_BUFFER_SIZE)
-    if( strcmp( "MBEDTLS_PSA_STATIC_KEY_SLOT_BUFFER_SIZE", config ) == 0 )
-    {
-        MACRO_EXPANSION_TO_STR( MBEDTLS_PSA_STATIC_KEY_SLOT_BUFFER_SIZE );
-        return( 0 );
-    }
-#endif /* MBEDTLS_PSA_STATIC_KEY_SLOT_BUFFER_SIZE */
 
 #if defined(MBEDTLS_RSA_GEN_KEY_MIN_BITS)
     if( strcmp( "MBEDTLS_RSA_GEN_KEY_MIN_BITS", config ) == 0 )
@@ -2859,6 +2811,14 @@ int query_config(const char *config)
         return( 0 );
     }
 #endif /* MBEDTLS_X509_MAX_FILE_PATH_LEN */
+
+#if defined(PSA_WANT_ALG_CBC_MAC)
+    if( strcmp( "PSA_WANT_ALG_CBC_MAC", config ) == 0 )
+    {
+        MACRO_EXPANSION_TO_STR( PSA_WANT_ALG_CBC_MAC );
+        return( 0 );
+    }
+#endif /* PSA_WANT_ALG_CBC_MAC */
 
 #if defined(PSA_WANT_ALG_CBC_NO_PADDING)
     if( strcmp( "PSA_WANT_ALG_CBC_NO_PADDING", config ) == 0 )
@@ -3188,6 +3148,14 @@ int query_config(const char *config)
     }
 #endif /* PSA_WANT_ALG_TLS12_ECJPAKE_TO_PMS */
 
+#if defined(PSA_WANT_ALG_XTS)
+    if( strcmp( "PSA_WANT_ALG_XTS", config ) == 0 )
+    {
+        MACRO_EXPANSION_TO_STR( PSA_WANT_ALG_XTS );
+        return( 0 );
+    }
+#endif /* PSA_WANT_ALG_XTS */
+
 #if defined(PSA_WANT_ECC_BRAINPOOL_P_R1_256)
     if( strcmp( "PSA_WANT_ECC_BRAINPOOL_P_R1_256", config ) == 0 )
     {
@@ -3235,6 +3203,14 @@ int query_config(const char *config)
         return( 0 );
     }
 #endif /* PSA_WANT_ECC_SECP_K1_192 */
+
+#if defined(PSA_WANT_ECC_SECP_K1_224)
+    if( strcmp( "PSA_WANT_ECC_SECP_K1_224", config ) == 0 )
+    {
+        MACRO_EXPANSION_TO_STR( PSA_WANT_ECC_SECP_K1_224 );
+        return( 0 );
+    }
+#endif /* PSA_WANT_ECC_SECP_K1_224 */
 
 #if defined(PSA_WANT_ECC_SECP_K1_256)
     if( strcmp( "PSA_WANT_ECC_SECP_K1_256", config ) == 0 )
@@ -4166,10 +4142,6 @@ void list_config(void)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_SSL_ASYNC_PRIVATE);
 #endif /* MBEDTLS_SSL_ASYNC_PRIVATE */
 
-#if defined(MBEDTLS_SSL_CLI_ALLOW_WEAK_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_SSL_CLI_ALLOW_WEAK_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME);
-#endif /* MBEDTLS_SSL_CLI_ALLOW_WEAK_CERTIFICATE_VERIFICATION_WITHOUT_HOSTNAME */
-
 #if defined(MBEDTLS_SSL_CONTEXT_SERIALIZATION)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_SSL_CONTEXT_SERIALIZATION);
 #endif /* MBEDTLS_SSL_CONTEXT_SERIALIZATION */
@@ -4189,10 +4161,6 @@ void list_config(void)
 #if defined(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_SSL_KEEP_PEER_CERTIFICATE);
 #endif /* MBEDTLS_SSL_KEEP_PEER_CERTIFICATE */
-
-#if defined(MBEDTLS_SSL_KEYING_MATERIAL_EXPORT)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_SSL_KEYING_MATERIAL_EXPORT);
-#endif /* MBEDTLS_SSL_KEYING_MATERIAL_EXPORT */
 
 #if defined(MBEDTLS_SSL_RENEGOTIATION)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_SSL_RENEGOTIATION);
@@ -4494,10 +4462,6 @@ void list_config(void)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PKCS7_C);
 #endif /* MBEDTLS_PKCS7_C */
 
-#if defined(MBEDTLS_PKCS7_ALLOW_WEAK_SIGNATURES)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PKCS7_ALLOW_WEAK_SIGNATURES);
-#endif /* MBEDTLS_PKCS7_ALLOW_WEAK_SIGNATURES */
-
 #if defined(MBEDTLS_PKCS12_C)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PKCS12_C);
 #endif /* MBEDTLS_PKCS12_C */
@@ -4525,10 +4489,6 @@ void list_config(void)
 #if defined(MBEDTLS_PSA_ITS_FILE_C)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PSA_ITS_FILE_C);
 #endif /* MBEDTLS_PSA_ITS_FILE_C */
-
-#if defined(MBEDTLS_PSA_STATIC_KEY_SLOTS)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PSA_STATIC_KEY_SLOTS);
-#endif /* MBEDTLS_PSA_STATIC_KEY_SLOTS */
 
 #if defined(MBEDTLS_RIPEMD160_C)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_RIPEMD160_C);
@@ -4854,10 +4814,6 @@ void list_config(void)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PRINTF_MS_TIME);
 #endif /* MBEDTLS_PRINTF_MS_TIME */
 
-#if defined(MBEDTLS_PLATFORM_DEV_RANDOM)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PLATFORM_DEV_RANDOM);
-#endif /* MBEDTLS_PLATFORM_DEV_RANDOM */
-
 #if defined(MBEDTLS_CHECK_RETURN)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_CHECK_RETURN);
 #endif /* MBEDTLS_CHECK_RETURN */
@@ -4873,10 +4829,6 @@ void list_config(void)
 #if defined(MBEDTLS_PSA_KEY_SLOT_COUNT)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PSA_KEY_SLOT_COUNT);
 #endif /* MBEDTLS_PSA_KEY_SLOT_COUNT */
-
-#if defined(MBEDTLS_PSA_STATIC_KEY_SLOT_BUFFER_SIZE)
-    OUTPUT_MACRO_NAME_VALUE(MBEDTLS_PSA_STATIC_KEY_SLOT_BUFFER_SIZE);
-#endif /* MBEDTLS_PSA_STATIC_KEY_SLOT_BUFFER_SIZE */
 
 #if defined(MBEDTLS_RSA_GEN_KEY_MIN_BITS)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_RSA_GEN_KEY_MIN_BITS);
@@ -4945,6 +4897,10 @@ void list_config(void)
 #if defined(MBEDTLS_X509_MAX_FILE_PATH_LEN)
     OUTPUT_MACRO_NAME_VALUE(MBEDTLS_X509_MAX_FILE_PATH_LEN);
 #endif /* MBEDTLS_X509_MAX_FILE_PATH_LEN */
+
+#if defined(PSA_WANT_ALG_CBC_MAC)
+    OUTPUT_MACRO_NAME_VALUE(PSA_WANT_ALG_CBC_MAC);
+#endif /* PSA_WANT_ALG_CBC_MAC */
 
 #if defined(PSA_WANT_ALG_CBC_NO_PADDING)
     OUTPUT_MACRO_NAME_VALUE(PSA_WANT_ALG_CBC_NO_PADDING);
@@ -5110,6 +5066,10 @@ void list_config(void)
     OUTPUT_MACRO_NAME_VALUE(PSA_WANT_ALG_TLS12_ECJPAKE_TO_PMS);
 #endif /* PSA_WANT_ALG_TLS12_ECJPAKE_TO_PMS */
 
+#if defined(PSA_WANT_ALG_XTS)
+    OUTPUT_MACRO_NAME_VALUE(PSA_WANT_ALG_XTS);
+#endif /* PSA_WANT_ALG_XTS */
+
 #if defined(PSA_WANT_ECC_BRAINPOOL_P_R1_256)
     OUTPUT_MACRO_NAME_VALUE(PSA_WANT_ECC_BRAINPOOL_P_R1_256);
 #endif /* PSA_WANT_ECC_BRAINPOOL_P_R1_256 */
@@ -5133,6 +5093,10 @@ void list_config(void)
 #if defined(PSA_WANT_ECC_SECP_K1_192)
     OUTPUT_MACRO_NAME_VALUE(PSA_WANT_ECC_SECP_K1_192);
 #endif /* PSA_WANT_ECC_SECP_K1_192 */
+
+#if defined(PSA_WANT_ECC_SECP_K1_224)
+    OUTPUT_MACRO_NAME_VALUE(PSA_WANT_ECC_SECP_K1_224);
+#endif /* PSA_WANT_ECC_SECP_K1_224 */
 
 #if defined(PSA_WANT_ECC_SECP_K1_256)
     OUTPUT_MACRO_NAME_VALUE(PSA_WANT_ECC_SECP_K1_256);

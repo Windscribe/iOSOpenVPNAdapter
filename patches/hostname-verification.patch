@@ -1,8 +1,8 @@
 diff --git a/openvpn/mbedtls/ssl/sslctx.hpp b/openvpn/mbedtls/ssl/sslctx.hpp
-index 1234567..abcdefg 100644
+index 84028b0..792511a 100644
 --- a/openvpn/mbedtls/ssl/sslctx.hpp
 +++ b/openvpn/mbedtls/ssl/sslctx.hpp
-@@ -499,6 +499,14 @@ class SSL : public SSLAPI
+@@ -948,6 +948,14 @@ class MbedTLSContext : public SSLFactoryAPI
                      if (mbedtls_ssl_set_hostname(ssl, hostname))
                          throw MbedTLSException("mbedtls_ssl_set_hostname failed");
                  }
@@ -14,6 +14,6 @@ index 1234567..abcdefg 100644
 +                    // This fixes: "SSL - Attempt to verify a certificate without an expected hostname"
 +                    mbedtls_ssl_set_hostname(ssl, nullptr);
 +                }
-
+ 
                  // client cert+key
                  if (c.local_cert_enabled)

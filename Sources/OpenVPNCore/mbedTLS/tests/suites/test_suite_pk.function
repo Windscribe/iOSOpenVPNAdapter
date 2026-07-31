@@ -181,7 +181,7 @@
 #define MBEDTLS_MD_ALG_FOR_TEST         MBEDTLS_MD_SHA512
 #endif
 
-#include <test/test_keys.h>
+#include <../src/test_keys.h>
 
 /* Define an RSA key size we know it's present in predefined_key[] array. */
 #define RSA_KEY_SIZE   1024
@@ -243,7 +243,7 @@ static psa_status_t pk_psa_import_key(const unsigned char *key_data, size_t key_
 
 /** Setup the provided PK context.
  *
- * Predefined keys used for the setup are taken from <test/test_keys.h>
+ * Predefined keys used for the setup are taken from "test/src/test_keys.h"
  * which is automatically generated using "framework/scripts/generate_test_keys.py".
  *
  * \param pk               The PK object to fill. It must  have been initialized
@@ -781,7 +781,7 @@ void pk_can_do_ext(int opaque_key, int key_type, int key_usage, int key_alg,
 
 exit:
     psa_reset_key_attributes(&attributes);
-    psa_destroy_key(key);
+    PSA_ASSERT(psa_destroy_key(key));
     mbedtls_pk_free(&pk);
     USE_PSA_DONE();
 }
@@ -1546,14 +1546,6 @@ void pk_rsa_decrypt_test_vec(data_t *cipher, int mod, int padding, int md_alg,
     if (ret == 0) {
         TEST_ASSERT(olen == clear->len);
         TEST_ASSERT(memcmp(output, clear->x, olen) == 0);
-
-        if (clear->len != 0) {
-            /* Try again with an output buffer that's too small */
-            TEST_EQUAL(mbedtls_pk_decrypt(&pk, cipher->x, cipher->len,
-                                          output, &olen, clear->len - 1,
-                                          mbedtls_test_rnd_pseudo_rand, &rnd_info),
-                       MBEDTLS_ERR_RSA_OUTPUT_TOO_LARGE);
-        }
     }
 
 exit:
@@ -1626,14 +1618,6 @@ void pk_wrap_rsa_decrypt_test_vec(data_t *cipher, int mod,
     if (ret == 0) {
         TEST_EQUAL(olen, clear->len);
         TEST_EQUAL(memcmp(output, clear->x, olen), 0);
-
-        if (clear->len != 0) {
-            /* Try again with an output buffer that's too small */
-            TEST_EQUAL(mbedtls_pk_decrypt(&pk, cipher->x, cipher->len,
-                                          output, &olen, clear->len - 1,
-                                          mbedtls_test_rnd_pseudo_rand, &rnd_info),
-                       MBEDTLS_ERR_RSA_OUTPUT_TOO_LARGE);
-        }
     }
 
     TEST_EQUAL(PSA_SUCCESS, psa_destroy_key(key_id));
@@ -1804,13 +1788,6 @@ void pk_rsa_alt()
                                    mbedtls_test_rnd_std_rand, NULL) == 0);
     TEST_ASSERT(test_len == sizeof(msg));
     TEST_ASSERT(memcmp(test, msg, test_len) == 0);
-
-
-    /* Try again with an output buffer that's too small */
-    TEST_EQUAL(mbedtls_pk_decrypt(&alt, ciph, ciph_len,
-                                  test, &test_len, sizeof(msg) - 1,
-                                  mbedtls_test_rnd_std_rand, NULL),
-               MBEDTLS_ERR_RSA_OUTPUT_TOO_LARGE);
 
     /* Test forbidden operations */
     TEST_ASSERT(mbedtls_pk_encrypt(&alt, msg, sizeof(msg),

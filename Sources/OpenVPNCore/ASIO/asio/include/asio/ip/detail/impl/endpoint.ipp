@@ -2,7 +2,7 @@
 // ip/detail/impl/endpoint.ipp
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //
-// Copyright (c) 2003-2022 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2003-2024 Christopher M. Kohlhoff (chris at kohlhoff dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
@@ -31,19 +31,15 @@ namespace asio {
 namespace ip {
 namespace detail {
 
-endpoint::endpoint() ASIO_NOEXCEPT
+endpoint::endpoint() noexcept
   : data_()
 {
   data_.v4.sin_family = ASIO_OS_DEF(AF_INET);
   data_.v4.sin_port = 0;
   data_.v4.sin_addr.s_addr = ASIO_OS_DEF(INADDR_ANY);
-#if defined(ASIO_USE_KOVPN_ROUTE_ID)
-  data_.v4_sin_ovpn_magic = 0;
-  data_.v4_sin_ovpn_route_id = 0;
-#endif
 }
 
-endpoint::endpoint(int family, unsigned short port_num) ASIO_NOEXCEPT
+endpoint::endpoint(int family, unsigned short port_num) noexcept
   : data_()
 {
   using namespace std; // For memcpy.
@@ -53,10 +49,6 @@ endpoint::endpoint(int family, unsigned short port_num) ASIO_NOEXCEPT
     data_.v4.sin_port =
       asio::detail::socket_ops::host_to_network_short(port_num);
     data_.v4.sin_addr.s_addr = ASIO_OS_DEF(INADDR_ANY);
-#if defined(ASIO_USE_KOVPN_ROUTE_ID)
-    data_.v4_sin_ovpn_magic = 0;
-    data_.v4_sin_ovpn_route_id = 0;
-#endif
   }
   else
   {
@@ -77,7 +69,7 @@ endpoint::endpoint(int family, unsigned short port_num) ASIO_NOEXCEPT
 }
 
 endpoint::endpoint(const asio::ip::address& addr,
-    unsigned short port_num) ASIO_NOEXCEPT
+    unsigned short port_num) noexcept
   : data_()
 {
   using namespace std; // For memcpy.
@@ -89,10 +81,6 @@ endpoint::endpoint(const asio::ip::address& addr,
     data_.v4.sin_addr.s_addr =
       asio::detail::socket_ops::host_to_network_long(
         addr.to_v4().to_uint());
-#if defined(ASIO_USE_KOVPN_ROUTE_ID)
-    data_.v4_sin_ovpn_magic = 0;
-    data_.v4_sin_ovpn_route_id = 0;
-#endif
   }
   else
   {
@@ -118,7 +106,7 @@ void endpoint::resize(std::size_t new_size)
   }
 }
 
-unsigned short endpoint::port() const ASIO_NOEXCEPT
+unsigned short endpoint::port() const noexcept
 {
   if (is_v4())
   {
@@ -132,7 +120,7 @@ unsigned short endpoint::port() const ASIO_NOEXCEPT
   }
 }
 
-void endpoint::port(unsigned short port_num) ASIO_NOEXCEPT
+void endpoint::port(unsigned short port_num) noexcept
 {
   if (is_v4())
   {
@@ -146,7 +134,7 @@ void endpoint::port(unsigned short port_num) ASIO_NOEXCEPT
   }
 }
 
-asio::ip::address endpoint::address() const ASIO_NOEXCEPT
+asio::ip::address endpoint::address() const noexcept
 {
   using namespace std; // For memcpy.
   if (is_v4())
@@ -158,27 +146,23 @@ asio::ip::address endpoint::address() const ASIO_NOEXCEPT
   else
   {
     asio::ip::address_v6::bytes_type bytes;
-#if defined(ASIO_HAS_STD_ARRAY)
     memcpy(bytes.data(), data_.v6.sin6_addr.s6_addr, 16);
-#else // defined(ASIO_HAS_STD_ARRAY)
-    memcpy(bytes.elems, data_.v6.sin6_addr.s6_addr, 16);
-#endif // defined(ASIO_HAS_STD_ARRAY)
     return asio::ip::address_v6(bytes, data_.v6.sin6_scope_id);
   }
 }
 
-void endpoint::address(const asio::ip::address& addr) ASIO_NOEXCEPT
+void endpoint::address(const asio::ip::address& addr) noexcept
 {
   endpoint tmp_endpoint(addr, port());
   data_ = tmp_endpoint.data_;
 }
 
-bool operator==(const endpoint& e1, const endpoint& e2) ASIO_NOEXCEPT
+bool operator==(const endpoint& e1, const endpoint& e2) noexcept
 {
   return e1.address() == e2.address() && e1.port() == e2.port();
 }
 
-bool operator<(const endpoint& e1, const endpoint& e2) ASIO_NOEXCEPT
+bool operator<(const endpoint& e1, const endpoint& e2) noexcept
 {
   if (e1.address() < e2.address())
     return true;
