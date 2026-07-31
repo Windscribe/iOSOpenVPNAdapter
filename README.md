@@ -1,11 +1,12 @@
-# Modern OpenVPN Adapter
+# ModernOpenVPNAdapter
 
-A Swift implementation of OpenVPN adapter for iOS/macOS with Objective-C++ bridge to OpenVPN3 core.
+Pure Objective-C OpenVPN adapter for iOS and tvOS with OpenVPN3 core integration.
 
 ## Features
 
-- Swift interface with Objective-C++ bridge to OpenVPN3 C++ core
-- iOS 14.0+, macOS 11.0+, tvOS 14.0+ support
+- Pure Objective-C implementation with Objective-C++ bridge to OpenVPN3 core
+- iOS 13.0+ and tvOS 13.0+ support
+- Socket pair bridge pattern for packet flow
 - Windscribe anti-censorship features (UDP stuffing, TCP split/reset)
 - Swift Package Manager compatible
 - Network Extension integration ready
@@ -14,11 +15,15 @@ A Swift implementation of OpenVPN adapter for iOS/macOS with Objective-C++ bridg
 
 ```
 ┌─────────────────────────────┐
-│        Swift Layer          │  ← Your app uses this
+│    iOS/tvOS Application     │
 ├─────────────────────────────┤
-│   Objective-C++ Bridge      │  ← OpenVPNClientWrapper
+│     OpenVPNAdapter (ObjC)   │  ← Main interface
 ├─────────────────────────────┤
-│     OpenVPN3 C++ Core       │  ← Core VPN protocol
+│   OpenVPNClient (ObjC++)    │  ← C++ bridge with delegate pattern
+├─────────────────────────────┤
+│  OpenVPNPacketFlowBridge    │  ← Socket pair implementation
+├─────────────────────────────┤
+│    OpenVPN3 C++ Core        │  ← Core VPN protocol (3.11.7)
 ├─────────────────────────────┤
 │  mbedTLS | ASIO | LZ4       │  ← Dependencies
 └─────────────────────────────┘
@@ -28,136 +33,254 @@ A Swift implementation of OpenVPN adapter for iOS/macOS with Objective-C++ bridg
 
 ### Swift Package Manager
 
-Add to your `Package.swift` or Xcode project:
+Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(path: "../ModernOpenVPNAdapter")
+    .package(url: "https://github.com/Windscribe/ModernOpenVPNAdapter.git", from: "1.0.0")
 ]
 ```
 
+Or add via Xcode: File → Add Package Dependencies
+
 ## Usage
 
-### Basic Connection
+### Basic Connection in PacketTunnelProvider
+
+```objc
+#import <OpenVPNAdapter/OpenVPNAdapter.h>
+
+@interface PacketTunnelProvider () <OpenVPNAdapterDelegate, OpenVPNAdapterPacketFlow>
+@property (nonatomic, strong) OpenVPNAdapter *adapter;
+@end
+
+@implementation PacketTunnelProvider
+
+- (void)startTunnelWithOptions:(NSDictionary *)options
+             completionHandler:(void (^)(NSError *))completionHandler {
+
+    // Create adapter
+    self.adapter = [[OpenVPNAdapter alloc] init];
+    self.adapter.delegate = self;
+
+    // Configure
+    OpenVPNConfiguration *configuration = [[OpenVPNConfiguration alloc] init];
+    configuration.fileContent = ovpnFileData;
+    configuration.disableClientCert = YES;  // For username/password auth
+
+    NSError *error;
+    [self.adapter applyConfiguration:configuration error:&error];
+    if (error) {
+        completionHandler(error);
+        return;
+    }
+
+    // Provide credentials
+    OpenVPNCredentials *credentials = [[OpenVPNCredentials alloc] init];
+    credentials.username = @"username";
+    credentials.password = @"password";
+    [self.adapter provideCredentials:credentials error:&error];
+
+    // Connect
+    [self.adapter connectUsingPacketFlow:self];
+}
+
+#pragma mark - OpenVPNAdapterDelegate
+
+- (void)openVPNAdapter:(OpenVPNAdapter *)openVPNAdapter
+configureTunnelWithNetworkSettings:(NEPacketTunnelNetworkSettings *)networkSettings
+     completionHandler:(void (^)(NSError *))completionHandler {
+
+    // Apply network settings to tunnel
+    [self setTunnelNetworkSettings:networkSettings completionHandler:completionHandler];
+}
+
+- (void)openVPNAdapter:(OpenVPNAdapter *)openVPNAdapter
+           handleEvent:(OpenVPNAdapterEvent)event
+               message:(NSString *)message {
+
+    switch (event) {
+        case OpenVPNAdapterEventConnected:
+            NSLog(@"Connected");
+            break;
+        case OpenVPNAdapterEventDisconnected:
+            NSLog(@"Disconnected");
+            break;
+        default:
+            break;
+    }
+}
+
+- (void)openVPNAdapter:(OpenVPNAdapter *)openVPNAdapter
+           handleError:(NSError *)error {
+    NSLog(@"Error: %@", error);
+}
+
+#pragma mark - OpenVPNAdapterPacketFlow
+
+- (void)writePackets:(NSArray<NSData *> *)packets withProtocols:(NSArray<NSNumber *> *)protocols {
+    [self.packetFlow writePackets:packets withProtocols:protocols];
+}
+
+- (void)readPacketsWithCompletionHandler:(void (^)(NSArray<NSData *> *, NSArray<NSNumber *> *))completionHandler {
+    [self.packetFlow readPacketsWithCompletionHandler:completionHandler];
+}
+
+@end
+```
+
+### Swift Usage
 
 ```swift
 import OpenVPNAdapter
 
-// Create and configure adapter
-let adapter = OpenVPNAdapter()
-
-let configuration = OpenVPNConfiguration()
-configuration.fileContent = ovpnFileData
-configuration.server = "vpn.example.com"
-configuration.port = 1194
-configuration.proto = .udp
-
-// Anti-censorship features (optional)
-configuration.udpStuffing = true      // Evades DPI
-configuration.tcpSplitReset = true    // Confuses censorship
-
-try adapter.applyConfiguration(configuration)
-
-// Set credentials
-let credentials = OpenVPNCredentials()
-credentials.username = "user"
-credentials.password = "pass"
-try adapter.provideCredentials(credentials)
-
-// Connect
-adapter.connect { event, message in
-    switch event {
-    case .connected:
-        print("Connected")
-    case .disconnected:
-        print("Disconnected")
-    default:
-        break
-    }
-}
-```
-
-### Network Extension
-
-```swift
 class PacketTunnelProvider: NEPacketTunnelProvider {
     let adapter = OpenVPNAdapter()
 
     override func startTunnel(options: [String : NSObject]?,
                             completionHandler: @escaping (Error?) -> Void) {
-        // Configure adapter with PacketFlow
-        adapter.connectWithPacketFlow(packetFlow) { event, message in
-            // Handle connection events
+
+        adapter.delegate = self
+
+        // Configure
+        let configuration = OpenVPNConfiguration()
+        configuration.fileContent = ovpnData
+        configuration.disableClientCert = true  // For username/password auth
+
+        do {
+            try adapter.applyConfiguration(configuration)
+
+            // Credentials
+            let credentials = OpenVPNCredentials()
+            credentials.username = "username"
+            credentials.password = "password"
+            try adapter.provideCredentials(credentials)
+
+            // Connect
+            adapter.connect(using: packetFlow)
+
+        } catch {
+            completionHandler(error)
         }
+    }
+}
+
+extension PacketTunnelProvider: OpenVPNAdapterDelegate {
+    func openVPNAdapter(_ adapter: OpenVPNAdapter,
+                       configureTunnelWith settings: NEPacketTunnelNetworkSettings?,
+                       completionHandler: @escaping (Error?) -> Void) {
+
+        setTunnelNetworkSettings(settings, completionHandler: completionHandler)
+    }
+
+    func openVPNAdapter(_ adapter: OpenVPNAdapter,
+                       handleEvent event: OpenVPNAdapterEvent,
+                       message: String?) {
+        // Handle events
+    }
+
+    func openVPNAdapter(_ adapter: OpenVPNAdapter, handleError error: Error) {
+        // Handle errors
     }
 }
 ```
 
+## Key Components
+
+### OpenVPNAdapter
+Main Objective-C interface providing connection management and configuration.
+
+### OpenVPNPacketFlowBridge
+Implements socket pair pattern using `socketpair()` and `CFSocket` for packet forwarding between OpenVPN3 and NEPacketTunnelFlow.
+
+### OpenVPNClient
+C++ bridge implementing `ClientAPI::OpenVPNClient` with delegation pattern. All TunBuilder methods delegate to Objective-C for proper tunnel configuration.
+
+### Model Objects
+- `OpenVPNConfiguration` - VPN configuration settings
+- `OpenVPNCredentials` - Authentication credentials
+- `OpenVPNConnectionInfo` - Connection status information
+- `OpenVPNInterfaceStats` - Interface statistics
+- `OpenVPNTransportStats` - Transport layer statistics
+
 ## Anti-Censorship Features
 
-This adapter includes Windscribe's anti-censorship patches:
+Includes Windscribe's anti-censorship implementations:
 
-- **UDP Stuffing**: Adds random padding to UDP packets to evade Deep Packet Inspection
-- **TCP Split/Reset**: Splits TCP handshake to confuse censorship systems
+- **UDP Stuffing**: Sends 10-100 random padding packets during handshake to evade DPI
+- **TCP Split/Reset**: Splits TCP handshake into 2-10 byte fragments to confuse censorship
 
-These features are preserved when upgrading OpenVPN3. To verify patches are active:
-
-```bash
-./scripts/check-versions.sh
-```
-
-To reapply patches after OpenVPN3 upgrade:
-
-```bash
-cd Sources/OpenVPNCore/OpenVPN3
-git apply ../../../patches/windscribe-anticensorship.patch
-```
+These features are automatically applied when upgrading OpenVPN3 via the upgrade script.
 
 ## Project Structure
 
 ```
 ModernOpenVPNAdapter/
-├── Package.swift                    # SPM configuration
+├── Package.swift
 ├── Sources/
 │   ├── OpenVPNCore/                # C++ dependencies
-│   │   ├── OpenVPN3/               # OpenVPN 3 core
-│   │   ├── mbedTLS/                # Crypto library
-│   │   ├── ASIO/                   # Network I/O
-│   │   └── LZ4/                    # Compression
-│   ├── OpenVPNAdapter/
-│   │   ├── Core/                   # Objective-C++ bridge
-│   │   │   ├── OpenVPNClientWrapper.mm
-│   │   │   └── OpenVPNPacketFlowBridge.mm
-│   │   └── Swift/                  # Swift API
-│   │       └── OpenVPNAdapter.swift
-│   └── PacketTunnelProvider/       # Example Network Extension
+│   │   ├── OpenVPN3/               # OpenVPN3 core (3.11.7)
+│   │   ├── mbedTLS/                # Crypto library (3.6.2)
+│   │   ├── ASIO/                   # Network I/O (1.31.0)
+│   │   └── LZ4/                    # Compression (1.10.0)
+│   └── OpenVPNAdapter/
+│       ├── include/                # Public headers
+│       │   ├── OpenVPNAdapter.h
+│       │   ├── OpenVPNConfiguration.h
+│       │   ├── OpenVPNCredentials.h
+│       │   └── module.modulemap
+│       └── Core/                   # Implementation
+│           ├── OpenVPNAdapter.mm
+│           ├── OpenVPNClient.mm    # C++ bridge
+│           └── OpenVPNPacketFlowBridge.mm
 ├── patches/
-│   └── windscribe-anticensorship.patch
+│   ├── hostname-verification.patch # Fix for mbedTLS 2.28.10+
+│   └── anticensorship-files/      # Anti-censorship implementations
 └── scripts/
-    ├── check-versions.sh           # Check dependencies & patches
-    └── apply-patches.sh            # Apply anti-censorship patches
+    └── upgrade-dependencies.sh     # Upgrade OpenVPN3 and dependencies
 ```
 
-## Building
+## Upgrading Dependencies
+
+To upgrade OpenVPN3 and dependencies:
 
 ```bash
-# Command line
+# Edit version numbers at top of script
+vi scripts/upgrade-dependencies.sh
+
+# Run upgrade
+./scripts/upgrade-dependencies.sh
+
+# Build and test
 swift build
 swift test
-
-# Or open Package.swift in Xcode
 ```
+
+The script automatically:
+- Downloads specified versions
+- Applies hostname verification patch
+- Copies anti-censorship implementations
 
 ## Requirements
 
-- iOS 14.0+ / macOS 11.0+ / tvOS 14.0+
+- iOS 13.0+ / tvOS 13.0+
 - Xcode 14.0+
-- Swift 5.10+
+- Swift 5.5+ (for Swift usage)
+
+## Important Notes
+
+1. **Authentication**: Set `disableClientCert = YES` when using username/password authentication without client certificates.
+
+2. **Socket Pair Bridge**: The adapter uses socket pairs created with `socketpair(PF_LOCAL, SOCK_DGRAM, IPPROTO_IP)` for packet forwarding.
+
+3. **Events**: OpenVPN3 sends event names in UPPERCASE (e.g., "CONNECTED" not "connected").
+
+4. **Platform Support**: This package only supports iOS and tvOS. macOS support has been removed.
 
 ## License
 
 Components include:
-- OpenVPN 3 (AGPLv3)
+- OpenVPN3 (AGPLv3)
 - mbedTLS (Apache 2.0)
 - ASIO (Boost Software License)
 - LZ4 (BSD 2-Clause)
