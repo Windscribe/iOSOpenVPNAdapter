@@ -1,4 +1,4 @@
-# ModernOpenVPNAdapter
+# iOSOpenVPNAdapter
 
 Pure Objective-C OpenVPN adapter for iOS and tvOS with OpenVPN3 core integration.
 
@@ -37,7 +37,7 @@ Add to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/Windscribe/ModernOpenVPNAdapter.git", from: "1.0.0")
+    .package(url: "https://github.com/Windscribe/iOSOpenVPNAdapter.git", from: "1.0.0")
 ]
 ```
 
@@ -215,7 +215,7 @@ These features are automatically applied when upgrading OpenVPN3 via the upgrade
 ## Project Structure
 
 ```
-ModernOpenVPNAdapter/
+iOSOpenVPNAdapter/
 ├── Package.swift
 ├── Sources/
 │   ├── OpenVPNCore/                # C++ dependencies

@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "ModernOpenVPNAdapter",
+    name: "iOSOpenVPNAdapter",
     platforms: [
         .iOS(.v14),
         .tvOS(.v14)
