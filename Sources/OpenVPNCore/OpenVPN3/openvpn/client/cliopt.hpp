@@ -992,7 +992,7 @@ class ClientOptions : public RC<thread_unsafe_refcount>
 
         auto nonTouchedOptions = [](const Option &option)
         { return !option.touched() && !option.touched_lightly(); };
-        showOptionsByFunction(opt, nonTouchedOptions, OPENVPN_UNUSED_OPTIONS, true, errors);
+        showOptionsByFunction(opt, nonTouchedOptions, OPENVPN_UNUSED_OPTIONS, false, errors);
 
         errors.print_option_errors();
     }
