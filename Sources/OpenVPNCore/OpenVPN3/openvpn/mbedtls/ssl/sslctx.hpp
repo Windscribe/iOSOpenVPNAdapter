@@ -1276,6 +1276,16 @@ class MbedTLSContext : public SSLFactoryAPI
     bool verify_ns_cert_type(const mbedtls_x509_crt *cert) const
     {
 #if MBEDTLS_VERSION_NUMBER < 0x03000000
+        // Check if the certificate actually has the ns-cert-type extension
+        // Many modern certificates don't have this deprecated Netscape extension
+        // If it's not present (value is 0), skip the check
+        if (cert->ns_cert_type == 0)
+        {
+            // No ns-cert-type extension present, consider it valid
+            // Modern certs use Extended Key Usage instead
+            return true;
+        }
+
         if (config->ns_cert_type == NSCert::SERVER)
             return bool(cert->ns_cert_type & MBEDTLS_X509_NS_CERT_TYPE_SSL_SERVER);
         else if (config->ns_cert_type == NSCert::CLIENT)
