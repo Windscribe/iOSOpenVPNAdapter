@@ -619,9 +619,10 @@ class ClientOptions : public RC<thread_unsafe_refcount>
         if (opt.exists("secret"))
             throw option_error(ERR_INVALID_OPTION_CRYPTO, "sorry, static key encryption mode (non-SSL/TLS) is not supported");
 
-        // fragment option not supported
-        if (opt.exists("fragment"))
-            throw option_error(ERR_INVALID_OPTION_VAL, "sorry, 'fragment' directive is not supported, nor is connecting to a server that uses 'fragment' directive");
+        // fragment option - ignored with warning (same as official OpenVPN iOS app)
+        // Modern VPN protocols handle fragmentation at lower layers
+        // if (opt.exists("fragment"))
+        //     throw option_error(ERR_INVALID_OPTION_VAL, "sorry, 'fragment' directive is not supported, nor is connecting to a server that uses 'fragment' directive");
 
         if (!opt.exists("client"))
             throw option_error(ERR_INVALID_CONFIG, "Neither 'client' nor both 'tls-client' and 'pull' options declared. OpenVPN3 client only supports --client mode.");
@@ -661,6 +662,7 @@ class ClientOptions : public RC<thread_unsafe_refcount>
         "disable-occ",
         "engine",
         "explicit-exit-notify", /* ignoring it in config does not break connection or functionality */
+        "fragment", /* Fragment is handled at lower network layers, ignored like official OpenVPN iOS app */
         "group",
         "ifconfig-nowarn", /* v3 does not do OCC checks */
         "ip-win32",
