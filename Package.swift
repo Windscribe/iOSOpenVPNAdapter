@@ -53,13 +53,15 @@ let package = Package(
             cSettings: [
                 .headerSearchPath("mbedTLS/include"),
                 .headerSearchPath("LZ4/lib"),
-                .define("MBEDTLS_CONFIG_FILE", to: "\"mbedtls_openvpn_config.h\"")
+                .define("MBEDTLS_RELAXED_X509_DATE")
+                // Custom config removed for mbedTLS 2.28.4 compatibility
             ],
             cxxSettings: [
                 .headerSearchPath("OpenVPN3"),
                 .headerSearchPath("mbedTLS/include"),
                 .headerSearchPath("ASIO/asio/include"),
                 .headerSearchPath("LZ4/lib"),
+                .define("MBEDTLS_RELAXED_X509_DATE"),
                 .define("USE_MBEDTLS"),
                 .define("USE_ASIO"),
                 .define("USE_ASIO_THREADLOCAL"),
@@ -68,8 +70,8 @@ let package = Package(
                 .define("ASIO_HAS_STD_STRING_VIEW"),
                 .define("ENABLE_OVPNDCO", .when(platforms: [.linux])),
                 .define("OPENVPN_PLATFORM_IPHONE", .when(platforms: [.iOS, .tvOS])),
-                .define("TARGET_OS_TV", .when(platforms: [.tvOS])),
-                .define("MBEDTLS_CONFIG_FILE", to: "\"mbedtls_openvpn_config.h\"")
+                .define("TARGET_OS_TV", .when(platforms: [.tvOS]))
+                // Custom config removed for mbedTLS 2.28.4 compatibility
             ],
             linkerSettings: [
                 .linkedFramework("Security"),
@@ -89,14 +91,15 @@ let package = Package(
                 .headerSearchPath("../OpenVPNCore/mbedTLS/include"),
                 .headerSearchPath("../OpenVPNCore/ASIO/asio/include"),
                 .headerSearchPath("../OpenVPNCore/LZ4/lib"),
+                .define("MBEDTLS_RELAXED_X509_DATE"),
                 .define("USE_MBEDTLS"),
                 .define("USE_ASIO"),
                 .define("USE_ASIO_THREADLOCAL"),
                 .define("ASIO_STANDALONE"),
                 .define("ASIO_NO_DEPRECATED"),
                 .define("ASIO_HAS_STD_STRING_VIEW"),
-                .define("OPENVPN_PLATFORM_IPHONE", .when(platforms: [.iOS, .tvOS])),
-                .define("MBEDTLS_CONFIG_FILE", to: "\"mbedtls_openvpn_config.h\"")
+                .define("OPENVPN_PLATFORM_IPHONE", .when(platforms: [.iOS, .tvOS]))
+                // Custom config removed for mbedTLS 2.28.4 compatibility
             ]
         ),
         .testTarget(
