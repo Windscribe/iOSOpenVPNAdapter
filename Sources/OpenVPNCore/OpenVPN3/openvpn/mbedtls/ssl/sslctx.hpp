@@ -1283,9 +1283,11 @@ class MbedTLSContext : public SSLFactoryAPI
         else
             return false;
 #else
-        // ns-cert-type is deprecated and not supported in mbedTLS 3.x
-        // Modern certificates use Extended Key Usage instead
-        // Return true to skip this check for mbedTLS 3.x
+        // mbedTLS 3.x removed ns_cert_type field from certificates
+        // ns-cert-type is a deprecated Netscape extension that modern certificates don't use
+        // They use Extended Key Usage (EKU) instead
+        // Since mbedTLS 3.x doesn't support reading this deprecated field,
+        // we return true to skip this check when using mbedTLS 3.x
         return true;
 #endif
     }
