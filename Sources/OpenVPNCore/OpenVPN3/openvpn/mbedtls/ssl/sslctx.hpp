@@ -689,7 +689,28 @@ class MbedTLSContext : public SSLFactoryAPI
 
         void start_handshake() override
         {
-            mbedtls_ssl_handshake(ssl);
+            OVPN_LOG_INFO("DEBUG: Starting TLS handshake");
+            int ret = mbedtls_ssl_handshake(ssl);
+            OVPN_LOG_INFO("DEBUG: TLS handshake returned: " << ret);
+            if (ret == 0)
+            {
+                OVPN_LOG_INFO("DEBUG: TLS handshake completed successfully");
+                const char *ver = mbedtls_ssl_get_version(ssl);
+                const char *cs = mbedtls_ssl_get_ciphersuite(ssl);
+                OVPN_LOG_INFO("DEBUG: TLS version: " << (ver ? ver : "unknown") << ", cipher: " << (cs ? cs : "unknown"));
+            }
+            else if (ret == MBEDTLS_ERR_SSL_WANT_READ)
+            {
+                OVPN_LOG_INFO("DEBUG: TLS handshake wants to read more data");
+            }
+            else if (ret == MBEDTLS_ERR_SSL_WANT_WRITE)
+            {
+                OVPN_LOG_INFO("DEBUG: TLS handshake wants to write more data");
+            }
+            else
+            {
+                OVPN_LOG_INFO("DEBUG: TLS handshake failed with error: " << ret);
+            }
         }
 
         ssize_t write_cleartext_unbuffered(const void *data, const size_t size) override
