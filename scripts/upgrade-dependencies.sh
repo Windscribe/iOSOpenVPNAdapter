@@ -2,7 +2,7 @@
 
 # Dependency versions - CHANGE THESE TO UPGRADE
 OPENVPN3_VERSION="release/3.11.7"  # OpenVPN3 latest stable
-MBEDTLS_VERSION="v3.6.2"           # mbedTLS 3.6.2
+MBEDTLS_VERSION="v2.28.4"           # mbedTLS 2.28.4 (downgraded for compatibility)
 LZ4_VERSION="v1.10.0"              # LZ4 uses vX.X.X format
 ASIO_VERSION="1.31.0"              # ASIO uses X.X.X format
 
