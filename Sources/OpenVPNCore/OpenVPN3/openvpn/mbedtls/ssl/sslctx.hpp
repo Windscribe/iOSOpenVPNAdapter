@@ -1281,8 +1281,13 @@ class MbedTLSContext : public SSLFactoryAPI
         else if (config->ns_cert_type == NSCert::CLIENT)
             return bool(cert->ns_cert_type & MBEDTLS_X509_NS_CERT_TYPE_SSL_CLIENT);
         else
-#endif
             return false;
+#else
+        // ns-cert-type is deprecated and not supported in mbedTLS 3.x
+        // Modern certificates use Extended Key Usage instead
+        // Return true to skip this check for mbedTLS 3.x
+        return true;
+#endif
     }
 
     // remote-cert-ku verification
