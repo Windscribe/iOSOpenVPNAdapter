@@ -689,28 +689,7 @@ class MbedTLSContext : public SSLFactoryAPI
 
         void start_handshake() override
         {
-            OVPN_LOG_INFO("DEBUG: Starting TLS handshake");
-            int ret = mbedtls_ssl_handshake(ssl);
-            OVPN_LOG_INFO("DEBUG: TLS handshake returned: " << ret);
-            if (ret == 0)
-            {
-                OVPN_LOG_INFO("DEBUG: TLS handshake completed successfully");
-                const char *ver = mbedtls_ssl_get_version(ssl);
-                const char *cs = mbedtls_ssl_get_ciphersuite(ssl);
-                OVPN_LOG_INFO("DEBUG: TLS version: " << (ver ? ver : "unknown") << ", cipher: " << (cs ? cs : "unknown"));
-            }
-            else if (ret == MBEDTLS_ERR_SSL_WANT_READ)
-            {
-                OVPN_LOG_INFO("DEBUG: TLS handshake wants to read more data");
-            }
-            else if (ret == MBEDTLS_ERR_SSL_WANT_WRITE)
-            {
-                OVPN_LOG_INFO("DEBUG: TLS handshake wants to write more data");
-            }
-            else
-            {
-                OVPN_LOG_INFO("DEBUG: TLS handshake failed with error: " << ret);
-            }
+            mbedtls_ssl_handshake(ssl);
         }
 
         ssize_t write_cleartext_unbuffered(const void *data, const size_t size) override
@@ -1302,15 +1281,8 @@ class MbedTLSContext : public SSLFactoryAPI
         else if (config->ns_cert_type == NSCert::CLIENT)
             return bool(cert->ns_cert_type & MBEDTLS_X509_NS_CERT_TYPE_SSL_CLIENT);
         else
-            return false;
-#else
-        // mbedTLS 3.x removed ns_cert_type field from certificates
-        // ns-cert-type is a deprecated Netscape extension that modern certificates don't use
-        // They use Extended Key Usage (EKU) instead
-        // Since mbedTLS 3.x doesn't support reading this deprecated field,
-        // we return true to skip this check when using mbedTLS 3.x
-        return true;
 #endif
+            return false;
     }
 
     // remote-cert-ku verification
@@ -1414,59 +1386,30 @@ class MbedTLSContext : public SSLFactoryAPI
         // leaf-cert verification
         if (depth == 0)
         {
-            OVPN_LOG_INFO("DEBUG: Starting leaf cert verification at depth 0");
-
             // verify ns-cert-type
-            if (self->ns_cert_type_defined())
+            if (self->ns_cert_type_defined() && !self->verify_ns_cert_type(cert))
             {
-                OVPN_LOG_INFO("DEBUG: Checking ns-cert-type (defined=" << self->ns_cert_type_defined() << ")");
-                bool ns_cert_ok = self->verify_ns_cert_type(cert);
-                OVPN_LOG_INFO("DEBUG: ns-cert-type verification result: " << ns_cert_ok);
-                if (!ns_cert_ok)
-                {
-                    OVPN_LOG_INFO("VERIFY FAIL -- bad ns-cert-type in leaf certificate");
-                    fail = true;
-                }
-            }
-            else
-            {
-                OVPN_LOG_INFO("DEBUG: ns-cert-type not defined, skipping");
+                OVPN_LOG_INFO("VERIFY FAIL -- bad ns-cert-type in leaf certificate");
+                fail = true;
             }
 
             // verify X509 key usage
-            if (self->x509_cert_ku_defined())
+            if (self->x509_cert_ku_defined() && !self->verify_x509_cert_ku(cert))
             {
-                OVPN_LOG_INFO("DEBUG: Checking X509 key usage");
-                if (!self->verify_x509_cert_ku(cert))
-                {
-                    OVPN_LOG_INFO("VERIFY FAIL -- bad X509 key usage in leaf certificate");
-                    fail = true;
-                }
-            }
-            else
-            {
-                OVPN_LOG_INFO("DEBUG: X509 key usage not defined, skipping");
+                OVPN_LOG_INFO("VERIFY FAIL -- bad X509 key usage in leaf certificate");
+                fail = true;
             }
 
             // verify X509 extended key usage
-            if (self->x509_cert_eku_defined())
+            if (self->x509_cert_eku_defined() && !self->verify_x509_cert_eku(cert))
             {
-                OVPN_LOG_INFO("DEBUG: Checking X509 extended key usage");
-                if (!self->verify_x509_cert_eku(cert))
-                {
-                    OVPN_LOG_INFO("VERIFY FAIL -- bad X509 extended key usage in leaf certificate");
-                    fail = true;
-                }
-            }
-            else
-            {
-                OVPN_LOG_INFO("DEBUG: X509 extended key usage not defined, skipping");
+                OVPN_LOG_INFO("VERIFY FAIL -- bad X509 extended key usage in leaf certificate");
+                fail = true;
             }
 
             // verify tls-remote
             if (!self->config->tls_remote.empty())
             {
-                OVPN_LOG_INFO("DEBUG: Checking tls-remote");
                 const std::string subject = TLSRemote::sanitize_x509_name(MbedTLSPKI::x509_get_subject(cert));
                 const std::string common_name = TLSRemote::sanitize_common_name(MbedTLSPKI::x509_get_common_name(cert));
                 TLSRemote::log(self->config->tls_remote, subject, common_name);
@@ -1476,59 +1419,36 @@ class MbedTLSContext : public SSLFactoryAPI
                     fail = true;
                 }
             }
-            else
-            {
-                OVPN_LOG_INFO("DEBUG: tls-remote not configured, skipping");
-            }
 
             // verify-x509-name
             const VerifyX509Name &verify_x509 = self->config->verify_x509_name;
-            OVPN_LOG_INFO("DEBUG: verify-x509-name mode = " << (int)verify_x509.get_mode());
             if (verify_x509.get_mode() != VerifyX509Name::VERIFY_X509_NONE)
             {
-                OVPN_LOG_INFO("DEBUG: Processing verify-x509-name check");
                 bool res = false;
                 switch (verify_x509.get_mode())
                 {
                 case VerifyX509Name::VERIFY_X509_SUBJECT_DN:
-                    OVPN_LOG_INFO("DEBUG: verify-x509-name SUBJECT_DN mode");
                     res = verify_x509.verify(MbedTLSPKI::x509_get_subject(cert, true));
                     break;
 
                 case VerifyX509Name::VERIFY_X509_SUBJECT_RDN:
                 case VerifyX509Name::VERIFY_X509_SUBJECT_RDN_PREFIX:
-                    {
-                        const std::string cn = MbedTLSPKI::x509_get_common_name(cert);
-                        OVPN_LOG_INFO("DEBUG: verify-x509-name RDN/PREFIX mode, CN=" << cn);
-                        res = verify_x509.verify(cn);
-                    }
+                    res = verify_x509.verify(MbedTLSPKI::x509_get_common_name(cert));
                     break;
 
                 default:
-                    OVPN_LOG_INFO("DEBUG: verify-x509-name unknown mode");
                     break;
                 }
-                OVPN_LOG_INFO("DEBUG: verify-x509-name result: " << res);
                 if (!res)
                 {
                     OVPN_LOG_INFO("VERIFY FAIL -- verify-x509-name failed");
                     fail = true;
                 }
             }
-            else
-            {
-                OVPN_LOG_INFO("DEBUG: verify-x509-name not configured (VERIFY_X509_NONE)");
-            }
-
-            OVPN_LOG_INFO("DEBUG: Leaf cert verification completed, fail=" << fail);
         }
 
         if (fail)
-        {
-            OVPN_LOG_INFO("DEBUG: Setting MBEDTLS_X509_BADCERT_OTHER flag due to verification failure");
             *flags |= MBEDTLS_X509_BADCERT_OTHER;
-        }
-        OVPN_LOG_INFO("DEBUG: verify_callback_client returning 0 (success), flags=" << *flags);
         return 0;
     }
 

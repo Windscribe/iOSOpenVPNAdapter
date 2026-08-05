@@ -37,16 +37,14 @@
 #define ALG_IS_HASH_AND_SIGN            (1u << 18)
 #define ALG_IS_RSA_OAEP                 (1u << 19)
 #define ALG_IS_HKDF                     (1u << 20)
-#define ALG_IS_HKDF_EXTRACT             (1u << 21)
-#define ALG_IS_HKDF_EXPAND              (1u << 22)
-#define ALG_IS_FFDH                     (1u << 23)
-#define ALG_IS_ECDH                     (1u << 24)
-#define ALG_IS_WILDCARD                 (1u << 25)
-#define ALG_IS_RAW_KEY_AGREEMENT        (1u << 26)
-#define ALG_IS_AEAD_ON_BLOCK_CIPHER     (1u << 27)
-#define ALG_IS_TLS12_PRF                (1u << 28)
-#define ALG_IS_TLS12_PSK_TO_MS          (1u << 29)
-#define ALG_FLAG_MASK_PLUS_ONE          (1u << 30)   /* must be last! */
+#define ALG_IS_FFDH                     (1u << 21)
+#define ALG_IS_ECDH                     (1u << 22)
+#define ALG_IS_WILDCARD                 (1u << 23)
+#define ALG_IS_RAW_KEY_AGREEMENT        (1u << 24)
+#define ALG_IS_AEAD_ON_BLOCK_CIPHER     (1u << 25)
+#define ALG_IS_TLS12_PRF                (1u << 26)
+#define ALG_IS_TLS12_PSK_TO_MS          (1u << 27)
+#define ALG_FLAG_MASK_PLUS_ONE          (1u << 28)   /* must be last! */
 
 /* Flags for key type classification macros. There is a flag for every
  * key type classification macro PSA_KEY_TYPE_IS_xxx except for some that
@@ -80,17 +78,17 @@
  * Unconditionally mask flag into the ambient variable
  * classification_flags_tested.
  */
-#define TEST_CLASSIFICATION_MACRO(cond, flag, alg, flags)       \
+#define TEST_CLASSIFICATION_MACRO(cond, flag, alg, flags)     \
     do                                                          \
     {                                                           \
-        if (cond)                                               \
+        if (cond)                                              \
         {                                                       \
-            if ((flags) & (flag))                               \
-            TEST_ASSERT(PSA_##flag(alg));                       \
+            if ((flags) & (flag))                          \
+            TEST_ASSERT(PSA_##flag(alg));               \
             else                                                \
-            TEST_ASSERT(!PSA_##flag(alg));                      \
+            TEST_ASSERT(!PSA_##flag(alg));             \
         }                                                       \
-        classification_flags_tested |= (flag);                  \
+        classification_flags_tested |= (flag);                \
     }                                                           \
     while (0)
 
@@ -106,7 +104,7 @@
  * The expected parity is even so that 0 is considered a valid encoding.
  *
  * Return a nonzero value if value has even parity and 0 otherwise. */
-static int has_even_parity(uint32_t value)
+int has_even_parity(uint32_t value)
 {
     value ^= value >> 16;
     value ^= value >> 8;
@@ -116,7 +114,7 @@ static int has_even_parity(uint32_t value)
 #define TEST_PARITY(value)                    \
     TEST_ASSERT(has_even_parity(value))
 
-static void algorithm_classification(psa_algorithm_t alg, unsigned flags)
+void algorithm_classification(psa_algorithm_t alg, unsigned flags)
 {
     unsigned classification_flags_tested = 0;
     TEST_CLASSIFICATION_MACRO(1, ALG_IS_VENDOR_DEFINED, alg, flags);
@@ -142,8 +140,6 @@ static void algorithm_classification(psa_algorithm_t alg, unsigned flags)
     TEST_CLASSIFICATION_MACRO(1, ALG_IS_HASH_AND_SIGN, alg, flags);
     TEST_CLASSIFICATION_MACRO(1, ALG_IS_RSA_OAEP, alg, flags);
     TEST_CLASSIFICATION_MACRO(1, ALG_IS_HKDF, alg, flags);
-    TEST_CLASSIFICATION_MACRO(1, ALG_IS_HKDF_EXTRACT, alg, flags);
-    TEST_CLASSIFICATION_MACRO(1, ALG_IS_HKDF_EXPAND, alg, flags);
     TEST_CLASSIFICATION_MACRO(1, ALG_IS_WILDCARD, alg, flags);
     TEST_CLASSIFICATION_MACRO(1, ALG_IS_ECDH, alg, flags);
     TEST_CLASSIFICATION_MACRO(1, ALG_IS_FFDH, alg, flags);
@@ -155,7 +151,7 @@ static void algorithm_classification(psa_algorithm_t alg, unsigned flags)
 exit:;
 }
 
-static void key_type_classification(psa_key_type_t type, unsigned flags)
+void key_type_classification(psa_key_type_t type, unsigned flags)
 {
     unsigned classification_flags_tested = 0;
 
@@ -192,9 +188,9 @@ static void key_type_classification(psa_key_type_t type, unsigned flags)
 exit:;
 }
 
-static void mac_algorithm_core(psa_algorithm_t alg, int classification_flags,
-                               psa_key_type_t key_type, size_t key_bits,
-                               size_t length)
+void mac_algorithm_core(psa_algorithm_t alg, int classification_flags,
+                        psa_key_type_t key_type, size_t key_bits,
+                        size_t length)
 {
     /* Algorithm classification */
     TEST_ASSERT(!PSA_ALG_IS_HASH(alg));
@@ -205,7 +201,6 @@ static void mac_algorithm_core(psa_algorithm_t alg, int classification_flags,
     TEST_ASSERT(!PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_AGREEMENT(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_PAKE(alg));
     algorithm_classification(alg, classification_flags);
 
     /* Length */
@@ -218,9 +213,9 @@ static void mac_algorithm_core(psa_algorithm_t alg, int classification_flags,
 exit:;
 }
 
-static void aead_algorithm_core(psa_algorithm_t alg, int classification_flags,
-                                psa_key_type_t key_type, size_t key_bits,
-                                size_t tag_length)
+void aead_algorithm_core(psa_algorithm_t alg, int classification_flags,
+                         psa_key_type_t key_type, size_t key_bits,
+                         size_t tag_length)
 {
     /* Algorithm classification */
     TEST_ASSERT(!PSA_ALG_IS_HASH(alg));
@@ -231,7 +226,6 @@ static void aead_algorithm_core(psa_algorithm_t alg, int classification_flags,
     TEST_ASSERT(!PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_AGREEMENT(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_PAKE(alg));
     algorithm_classification(alg, classification_flags);
 
     /* Tag length */
@@ -271,7 +265,6 @@ void hash_algorithm(int alg_arg, int length_arg)
     TEST_ASSERT(!PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_AGREEMENT(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_PAKE(alg));
     algorithm_classification(alg, 0);
 
     /* Dependent algorithms */
@@ -412,7 +405,6 @@ void cipher_algorithm(int alg_arg, int classification_flags)
     TEST_ASSERT(!PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_AGREEMENT(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_PAKE(alg));
     algorithm_classification(alg, classification_flags);
 }
 /* END_CASE */
@@ -512,7 +504,6 @@ void asymmetric_signature_algorithm(int alg_arg, int classification_flags)
     TEST_ASSERT(!PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_AGREEMENT(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_PAKE(alg));
     algorithm_classification(alg, classification_flags);
 }
 /* END_CASE */
@@ -544,7 +535,6 @@ void asymmetric_encryption_algorithm(int alg_arg, int classification_flags)
     TEST_ASSERT(PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_AGREEMENT(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_PAKE(alg));
     algorithm_classification(alg, classification_flags);
 }
 /* END_CASE */
@@ -565,7 +555,6 @@ void key_derivation_algorithm(int alg_arg, int classification_flags)
     TEST_ASSERT(!PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_AGREEMENT(alg));
     TEST_ASSERT(PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_PAKE(alg));
     algorithm_classification(alg, classification_flags);
 
     /* Check combinations with key agreements */
@@ -595,7 +584,6 @@ void key_agreement_algorithm(int alg_arg, int classification_flags,
     TEST_ASSERT(!PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
     TEST_ASSERT(PSA_ALG_IS_KEY_AGREEMENT(alg));
     TEST_ASSERT(!PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_PAKE(alg));
     algorithm_classification(alg, classification_flags);
 
     /* Shared secret derivation properties */
@@ -604,24 +592,6 @@ void key_agreement_algorithm(int alg_arg, int classification_flags,
 }
 /* END_CASE */
 
-/* BEGIN_CASE */
-void pake_algorithm(int alg_arg)
-{
-    psa_algorithm_t alg = alg_arg;
-
-    /* Algorithm classification */
-    TEST_ASSERT(!PSA_ALG_IS_HASH(alg));
-    TEST_ASSERT(!PSA_ALG_IS_MAC(alg));
-    TEST_ASSERT(!PSA_ALG_IS_CIPHER(alg));
-    TEST_ASSERT(!PSA_ALG_IS_AEAD(alg));
-    TEST_ASSERT(!PSA_ALG_IS_SIGN(alg));
-    TEST_ASSERT(!PSA_ALG_IS_ASYMMETRIC_ENCRYPTION(alg));
-    TEST_ASSERT(!PSA_ALG_IS_KEY_AGREEMENT(alg));
-    TEST_ASSERT(!PSA_ALG_IS_KEY_DERIVATION(alg));
-    TEST_ASSERT(PSA_ALG_IS_PAKE(alg));
-}
-
-/* END_CASE */
 /* BEGIN_CASE */
 void key_type(int type_arg, int classification_flags)
 {
@@ -699,7 +669,7 @@ void ecc_key_family(int curve_arg)
 }
 /* END_CASE */
 
-/* BEGIN_CASE depends_on:PSA_KEY_TYPE_DH_PUBLIC_KEY:PSA_KEY_TYPE_DH_KEY_PAIR */
+/* BEGIN_CASE depends_on:MBEDTLS_DHM_C */
 void dh_key_family(int group_arg)
 {
     psa_dh_family_t group = group_arg;
