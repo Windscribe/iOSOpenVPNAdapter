@@ -2,17 +2,32 @@
  *  SSL client for SMTP servers
  *
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
+ *  SPDX-License-Identifier: Apache-2.0
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may
+ *  not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
  */
 
 /* Enable definition of gethostname() even when compiling with -std=c99. Must
- * be set before mbedtls_config.h, which pulls in glibc's features.h indirectly.
+ * be set before config.h, which pulls in glibc's features.h indirectly.
  * Harmless on other platforms. */
-
 #define _POSIX_C_SOURCE 200112L
 #define _XOPEN_SOURCE 600
 
-#include "mbedtls/build_info.h"
+#if !defined(MBEDTLS_CONFIG_FILE)
+#include "mbedtls/config.h"
+#else
+#include MBEDTLS_CONFIG_FILE
+#endif
 
 #include "mbedtls/platform.h"
 
@@ -38,7 +53,7 @@ int main(void)
 #include "mbedtls/ssl.h"
 #include "mbedtls/entropy.h"
 #include "mbedtls/ctr_drbg.h"
-#include "test/certs.h"
+#include "mbedtls/certs.h"
 #include "mbedtls/x509.h"
 
 #include <stdlib.h>
@@ -179,27 +194,21 @@ static int do_handshake(mbedtls_ssl_context *ssl)
 
     /* In real life, we probably want to bail out when ret != 0 */
     if ((flags = mbedtls_ssl_get_verify_result(ssl)) != 0) {
-#if !defined(MBEDTLS_X509_REMOVE_INFO)
         char vrfy_buf[512];
-#endif
 
         mbedtls_printf(" failed\n");
 
-#if !defined(MBEDTLS_X509_REMOVE_INFO)
         mbedtls_x509_crt_verify_info(vrfy_buf, sizeof(vrfy_buf), "  ! ", flags);
 
         mbedtls_printf("%s\n", vrfy_buf);
-#endif
     } else {
         mbedtls_printf(" ok\n");
     }
 
-#if !defined(MBEDTLS_X509_REMOVE_INFO)
     mbedtls_printf("  . Peer certificate information    ...\n");
     mbedtls_x509_crt_info((char *) buf, sizeof(buf) - 1, "      ",
                           mbedtls_ssl_get_peer_cert(ssl));
     mbedtls_printf("%s\n", buf);
-#endif
 
     return 0;
 }
@@ -476,12 +485,12 @@ usage:
         ret = mbedtls_x509_crt_parse_file(&cacert, opt.ca_file);
     } else
 #endif
-#if defined(MBEDTLS_PEM_PARSE_C)
+#if defined(MBEDTLS_CERTS_C) && defined(MBEDTLS_PEM_PARSE_C)
     ret = mbedtls_x509_crt_parse(&cacert, (const unsigned char *) mbedtls_test_cas_pem,
                                  mbedtls_test_cas_pem_len);
 #else
     {
-        mbedtls_printf("MBEDTLS_PEM_PARSE_C not defined.");
+        mbedtls_printf("MBEDTLS_CERTS_C and/or MBEDTLS_PEM_PARSE_C not defined.");
         goto exit;
     }
 #endif
@@ -505,8 +514,15 @@ usage:
         ret = mbedtls_x509_crt_parse_file(&clicert, opt.crt_file);
     } else
 #endif
+#if defined(MBEDTLS_CERTS_C)
     ret = mbedtls_x509_crt_parse(&clicert, (const unsigned char *) mbedtls_test_cli_crt,
                                  mbedtls_test_cli_crt_len);
+#else
+    {
+        mbedtls_printf("MBEDTLS_CERTS_C not defined.");
+        goto exit;
+    }
+#endif
     if (ret != 0) {
         mbedtls_printf(" failed\n  !  mbedtls_x509_crt_parse returned %d\n\n", ret);
         goto exit;
@@ -514,23 +530,15 @@ usage:
 
 #if defined(MBEDTLS_FS_IO)
     if (strlen(opt.key_file)) {
-        ret = mbedtls_pk_parse_keyfile(&pkey, opt.key_file, "",
-                                       mbedtls_ctr_drbg_random, &ctr_drbg);
+        ret = mbedtls_pk_parse_keyfile(&pkey, opt.key_file, "");
     } else
 #endif
-#if defined(MBEDTLS_PEM_PARSE_C)
-    {
-        ret = mbedtls_pk_parse_key(&pkey,
-                                   (const unsigned char *) mbedtls_test_cli_key,
-                                   mbedtls_test_cli_key_len,
-                                   NULL,
-                                   0,
-                                   mbedtls_ctr_drbg_random,
-                                   &ctr_drbg);
-    }
+#if defined(MBEDTLS_CERTS_C) && defined(MBEDTLS_PEM_PARSE_C)
+    ret = mbedtls_pk_parse_key(&pkey, (const unsigned char *) mbedtls_test_cli_key,
+                               mbedtls_test_cli_key_len, NULL, 0);
 #else
     {
-        mbedtls_printf("MBEDTLS_PEM_PARSE_C not defined.");
+        mbedtls_printf("MBEDTLS_CERTS_C or MBEDTLS_PEM_PARSE_C not defined.");
         goto exit;
     }
 #endif
@@ -727,11 +735,7 @@ usage:
     mbedtls_printf("  > Write MAIL FROM to server:");
     fflush(stdout);
 
-    len = mbedtls_snprintf((char *) buf, sizeof(buf), "MAIL FROM:<%s>\r\n", opt.mail_from);
-    if (len < 0 || (size_t) len >= sizeof(buf)) {
-        mbedtls_printf(" failed\n  ! mbedtls_snprintf encountered error or truncated output\n\n");
-        goto exit;
-    }
+    len = sprintf((char *) buf, "MAIL FROM:<%s>\r\n", opt.mail_from);
     ret = write_ssl_and_get_response(&ssl, buf, len);
     if (ret < 200 || ret > 299) {
         mbedtls_printf(" failed\n  ! server responded with %d\n\n", ret);
@@ -743,11 +747,7 @@ usage:
     mbedtls_printf("  > Write RCPT TO to server:");
     fflush(stdout);
 
-    len = mbedtls_snprintf((char *) buf, sizeof(buf), "RCPT TO:<%s>\r\n", opt.mail_to);
-    if (len < 0 || (size_t) len >= sizeof(buf)) {
-        mbedtls_printf(" failed\n  ! mbedtls_snprintf encountered error or truncated output\n\n");
-        goto exit;
-    }
+    len = sprintf((char *) buf, "RCPT TO:<%s>\r\n", opt.mail_to);
     ret = write_ssl_and_get_response(&ssl, buf, len);
     if (ret < 200 || ret > 299) {
         mbedtls_printf(" failed\n  ! server responded with %d\n\n", ret);
@@ -771,16 +771,11 @@ usage:
     mbedtls_printf("  > Write content to server:");
     fflush(stdout);
 
-    len = mbedtls_snprintf((char *) buf, sizeof(buf),
-                           "From: %s\r\nSubject: Mbed TLS Test mail\r\n\r\n"
-                           "This is a simple test mail from the "
-                           "Mbed TLS mail client example.\r\n"
-                           "\r\n"
-                           "Enjoy!", opt.mail_from);
-    if (len < 0 || (size_t) len >= sizeof(buf)) {
-        mbedtls_printf(" failed\n  ! mbedtls_snprintf encountered error or truncated output\n\n");
-        goto exit;
-    }
+    len = sprintf((char *) buf, "From: %s\r\nSubject: mbed TLS Test mail\r\n\r\n"
+                                "This is a simple test mail from the "
+                                "mbed TLS mail client example.\r\n"
+                                "\r\n"
+                                "Enjoy!", opt.mail_from);
     ret = write_ssl_data(&ssl, buf, len);
 
     len = sprintf((char *) buf, "\r\n.\r\n");
@@ -809,6 +804,11 @@ exit:
 #if defined(MBEDTLS_USE_PSA_CRYPTO)
     mbedtls_psa_crypto_free();
 #endif /* MBEDTLS_USE_PSA_CRYPTO */
+
+#if defined(_WIN32)
+    mbedtls_printf("  + Press Enter to exit this program.\n");
+    fflush(stdout); getchar();
+#endif
 
     mbedtls_exit(exit_code);
 }

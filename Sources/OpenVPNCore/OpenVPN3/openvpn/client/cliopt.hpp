@@ -666,7 +666,6 @@ class ClientOptions : public RC<thread_unsafe_refcount>
         "ip-win32",
         "keepalive", /* A push only feature (ping/ping-restart) in v3. Ignore with warning since often present in configs too */
         "link-mtu",
-        "local-proxy", /* Windscribe specific option, not supported in OpenVPN3 */
         "machine-readable-output", /* would be set by a CliOptions */
         "mark",                    /* enables SO_MARK */
         "mute",
@@ -992,7 +991,7 @@ class ClientOptions : public RC<thread_unsafe_refcount>
 
         auto nonTouchedOptions = [](const Option &option)
         { return !option.touched() && !option.touched_lightly(); };
-        showOptionsByFunction(opt, nonTouchedOptions, OPENVPN_UNUSED_OPTIONS, false, errors);
+        showOptionsByFunction(opt, nonTouchedOptions, OPENVPN_UNUSED_OPTIONS, true, errors);
 
         errors.print_option_errors();
     }

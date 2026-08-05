@@ -2,7 +2,19 @@
  *  UDP proxy: emulate an unreliable UDP connection for DTLS testing
  *
  *  Copyright The Mbed TLS Contributors
- *  SPDX-License-Identifier: Apache-2.0 OR GPL-2.0-or-later
+ *  SPDX-License-Identifier: Apache-2.0
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License"); you may
+ *  not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+ *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
  */
 
 /*
@@ -11,8 +23,11 @@
  * example of good general usage.
  */
 
-
-#include "mbedtls/build_info.h"
+#if !defined(MBEDTLS_CONFIG_FILE)
+#include "mbedtls/config.h"
+#else
+#include MBEDTLS_CONFIG_FILE
+#endif
 
 #if defined(MBEDTLS_PLATFORM_C)
 #include "mbedtls/platform.h"
@@ -60,10 +75,9 @@ int main(void)
 #endif
 #endif /* _MSC_VER */
 #else /* ( _WIN32 || _WIN32_WCE ) && !EFIX64 && !EFI32 */
-#if defined(MBEDTLS_HAVE_TIME) || (defined(MBEDTLS_TIMING_C) && !defined(MBEDTLS_TIMING_ALT))
+#if defined(MBEDTLS_HAVE_TIME)
 #include <sys/time.h>
 #endif
-#include <sys/select.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif /* ( _WIN32 || _WIN32_WCE ) && !EFIX64 && !EFI32 */
@@ -483,7 +497,7 @@ typedef struct {
 } packet;
 
 /* Print packet. Outgoing packets come with a reason (forward, dupl, etc.) */
-static void print_packet(const packet *p, const char *why)
+void print_packet(const packet *p, const char *why)
 {
 #if defined(MBEDTLS_TIMING_C)
     if (why == NULL) {
@@ -527,7 +541,7 @@ typedef enum {
 static inject_clihlo_state_t inject_clihlo_state;
 static packet initial_clihlo;
 
-static int send_packet(const packet *p, const char *why)
+int send_packet(const packet *p, const char *why)
 {
     int ret;
     mbedtls_net_context *dst = p->dst;
@@ -616,13 +630,13 @@ static int send_packet(const packet *p, const char *why)
 static size_t prev_len;
 static packet prev[MAX_DELAYED_MSG];
 
-static void clear_pending(void)
+void clear_pending(void)
 {
     memset(&prev, 0, sizeof(prev));
     prev_len = 0;
 }
 
-static void delay_packet(packet *delay)
+void delay_packet(packet *delay)
 {
     if (prev_len == MAX_DELAYED_MSG) {
         return;
@@ -631,7 +645,7 @@ static void delay_packet(packet *delay)
     memcpy(&prev[prev_len++], delay, sizeof(packet));
 }
 
-static int send_delayed(void)
+int send_delayed(void)
 {
     uint8_t offset;
     int ret;
@@ -663,9 +677,9 @@ static int send_delayed(void)
 static unsigned char held[2048] = { 0 };
 #define HOLD_MAX 2
 
-static int handle_message(const char *way,
-                          mbedtls_net_context *dst,
-                          mbedtls_net_context *src)
+int handle_message(const char *way,
+                   mbedtls_net_context *dst,
+                   mbedtls_net_context *src)
 {
     int ret;
     packet cur;
@@ -959,6 +973,11 @@ exit:
     mbedtls_net_free(&client_fd);
     mbedtls_net_free(&server_fd);
     mbedtls_net_free(&listen_fd);
+
+#if defined(_WIN32)
+    mbedtls_printf("  Press Enter to exit this program.\n");
+    fflush(stdout); getchar();
+#endif
 
     mbedtls_exit(exit_code);
 }
