@@ -279,8 +279,25 @@ The script automatically:
 
 ## License
 
-Components include:
-- OpenVPN3 (AGPLv3)
-- mbedTLS (Apache 2.0)
-- ASIO (Boost Software License)
-- LZ4 (BSD 2-Clause)
+iOSOpenVPNAdapter is licensed under the **GNU Affero General Public License v3.0**.
+See [LICENSE](LICENSE) for the full terms and [NOTICE](NOTICE) for attribution.
+
+The adapter layer in `Sources/OpenVPNAdapter` derives from
+[ss-abramchuk/OpenVPNAdapter](https://github.com/ss-abramchuk/OpenVPNAdapter) (AGPLv3),
+modified by Windscribe. The package also vendors:
+
+| Component | Copyright | License |
+| --- | --- | --- |
+| [OpenVPN 3 Core](https://github.com/OpenVPN/openvpn3) | OpenVPN Inc. | AGPLv3 |
+| [mbedTLS](https://github.com/Mbed-TLS/mbedtls) | The Mbed TLS Contributors | Apache 2.0 |
+| [Asio](https://github.com/chriskohlhoff/asio) | Christopher M. Kohlhoff | Boost Software License 1.0 |
+| [LZ4](https://github.com/lz4/lz4) | Yann Collet | BSD 2-Clause |
+
+Because this package includes AGPLv3 components, any application that links it
+must comply with the AGPLv3 — including making its complete corresponding source
+available. Windscribe's own iOS client does this at
+[github.com/Windscribe/iOS-App](https://github.com/Windscribe/iOS-App).
+
+If you need to use OpenVPN 3 Core in a closed-source application, contact
+[OpenVPN Inc.](https://openvpn.net/) for commercial licensing — Windscribe cannot
+grant rights to that component.
