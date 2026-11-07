@@ -1,0 +1,56 @@
+iOSOpenVPNAdapter
+Copyright (c) 2026 Windscribe Limited
+
+This product is licensed under the GNU Affero General Public License v3.0.
+See the LICENSE file for the full terms.
+
+This software includes and derives from the following works:
+
+---
+
+OpenVPNAdapter
+Copyright (c) Sergey Abramchuk and the OpenVPNAdapter contributors
+https://github.com/ss-abramchuk/OpenVPNAdapter
+Licensed under the GNU Affero General Public License v3.0
+
+The Objective-C/Objective-C++ adapter layer in Sources/OpenVPNAdapter is
+derived from this project. Windscribe has modified it: the sources were
+restructured, macOS support and the certificate/private-key handling were
+removed, logging was added, and anti-censorship support was introduced.
+
+---
+
+OpenVPN 3 Core
+Copyright (c) OpenVPN Inc.
+https://github.com/OpenVPN/openvpn3
+Licensed under the GNU Affero General Public License v3.0
+
+Vendored in Sources/OpenVPNCore/OpenVPN3 with its own LICENSE.md retained.
+Windscribe patches applied to this component are in patches/.
+
+---
+
+mbedTLS
+Copyright (c) The Mbed TLS Contributors
+https://github.com/Mbed-TLS/mbedtls
+Licensed under the Apache License 2.0
+
+Vendored in Sources/OpenVPNCore/mbedTLS.
+
+---
+
+Asio
+Copyright (c) Christopher M. Kohlhoff
+https://github.com/chriskohlhoff/asio
+Licensed under the Boost Software License 1.0
+
+Vendored in Sources/OpenVPNCore/ASIO.
+
+---
+
+LZ4
+Copyright (c) Yann Collet
+https://github.com/lz4/lz4
+Licensed under the BSD 2-Clause License
+
+Vendored in Sources/OpenVPNCore/LZ4.
