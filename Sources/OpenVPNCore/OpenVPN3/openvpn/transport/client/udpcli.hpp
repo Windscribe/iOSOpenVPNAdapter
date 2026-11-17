@@ -25,7 +25,7 @@
 #include <openvpn/transport/client/transbase.hpp>
 #include <openvpn/transport/socket_protect.hpp>
 #include <openvpn/client/remotelist.hpp>
-#include <openvpn/random/randapi.hpp>
+#include <openvpn/client/anti_censorship.hpp>
 
 namespace openvpn::UDPTransport {
 
@@ -41,9 +41,10 @@ class ClientConfig : public TransportClientFactory
     Frame::Ptr frame;
     SessionStats::Ptr stats;
 
-    // WINDSCRIBE ANTICENSORSHIP: UDP stuffing support
+    // Anti-censorship: udp-stuffing, junk packets and pre-connect (i1..i5)
+    // packets sent before the hard-reset packet
+    AntiCensorship::Config ac;
     RandomAPI::Ptr rng;
-    bool do_stuffing = false;
 
     SocketProtect *socket_protect;
 
@@ -202,34 +203,93 @@ class Client : public TransportClient, AsyncResolvableUDP
         parent = parent_arg;
     }
 
+    // Anti-censorship: send Jc junk UDP packets of random size between
+    // Jmin and Jmax bytes, filled with random data.
+    void send_junk_packets()
+    {
+        const AntiCensorship::Config &ac = config->ac;
+        int jmin = ac.junk_packet_min_size;
+        int jmax = ac.junk_packet_max_size;
+
+        if (jmin <= 0 || jmax <= 0)
+            return;
+
+        if (jmin > jmax)
+            jmax = jmin;
+
+        const int range = jmax - jmin;
+
+        for (int i = 0; i < ac.junk_packet_count; i++)
+        {
+            // pick a random size in [jmin, jmax]
+            const int pkt_size = jmin + (range > 0 ? (int)config->rng->randrange32((uint32_t)range + 1) : 0);
+
+            BufferAllocated junk_buf((size_t)pkt_size, 0);
+            unsigned char *data = junk_buf.write_alloc((size_t)pkt_size);
+            config->rng->rand_bytes(data, (size_t)pkt_size);
+            impl->send(junk_buf, nullptr);
+        }
+    }
+
+    // Anti-censorship: send the user-defined pre-connect packets (i1..i5)
+    // built from their tag-spec strings.
+    void send_pre_connect_packets()
+    {
+        const AntiCensorship::Config &ac = config->ac;
+        for (size_t i = 0; i < AntiCensorship::PRE_CONNECT_COUNT; i++)
+        {
+            if (ac.i_packets[i].empty())
+                continue;
+
+            BufferAllocated pkt(AntiCensorship::PRE_CONNECT_MAX, 0);
+            if (!AntiCensorship::build_pre_connect_packet(ac.i_packets[i], pkt, *config->rng))
+            {
+                OPENVPN_LOG("anti-censorship: failed to build packet i" << (i + 1) << ", skipping");
+                continue;
+            }
+
+            if (pkt.empty())
+                continue;
+
+            impl->send(pkt, nullptr);
+        }
+    }
+
+    // Anti-censorship: send random UDP stuffing packets (10..99 packets
+    // of 200..899 bytes).
+    void send_stuffing_packets()
+    {
+        const size_t stuffing_num = AntiCensorship::STUFFING_NUM_MIN + config->rng->randrange32((uint32_t)(AntiCensorship::STUFFING_NUM_MAX - AntiCensorship::STUFFING_NUM_MIN));
+
+        for (size_t i = 0; i < stuffing_num; i++)
+        {
+            const size_t stuffing_len = AntiCensorship::STUFFING_LEN_MIN + config->rng->randrange32((uint32_t)(AntiCensorship::STUFFING_LEN_MAX - AntiCensorship::STUFFING_LEN_MIN));
+            BufferAllocated stuffing_buf((size_t)stuffing_len, 0);
+            unsigned char *data = stuffing_buf.write_alloc(stuffing_len);
+            config->rng->rand_bytes(data, stuffing_len);
+            impl->send(stuffing_buf, nullptr);
+        }
+    }
+
     bool send(const Buffer &buf)
     {
         if (impl)
         {
-            // WINDSCRIBE ANTICENSORSHIP: UDP Stuffing implementation
-            // Adds random padding packets to evade DPI detection
-            #define STUFFING_LEN_MAX 900
-            #define STUFFING_NUM_MAX 100
-            #define X_P_OPCODE_SHIFT 3
-            #define X_CONTROL_HARD_RESET_CLIENT_V2 7
-            #define X_CONTROL_HARD_RESET_CLIENT_V3 10
-
-            if (config->do_stuffing && config->rng)
+            // Anti-censorship: before the hard-reset packet is sent, emit
+            // (in order) the junk packets (junk-first), the pre-connect
+            // packets (i1..i5), the junk packets (default) and the random
+            // UDP stuffing packets.
+            if (!buf.empty() && config->rng
+                && AntiCensorship::is_hard_reset(buf.c_data()[0]))
             {
-                uint8_t opcode = buf.c_data()[0] >> X_P_OPCODE_SHIFT;
-                if (opcode == X_CONTROL_HARD_RESET_CLIENT_V2 || opcode == X_CONTROL_HARD_RESET_CLIENT_V3)
-                {
-                    int stuffing_len = config->rng->randrange32(200, STUFFING_LEN_MAX);
-                    int stuffing_num = config->rng->randrange32(10, STUFFING_NUM_MAX);
-                    unsigned char stuffing_buf[STUFFING_LEN_MAX];
-                    for (int i = 0; i < stuffing_num; i++)
-                    {
-                        config->rng->rand_bytes(reinterpret_cast<unsigned char*>(&stuffing_buf), sizeof(stuffing_buf));
-                        BufferAllocated buf2(STUFFING_LEN_MAX, 0);
-                        buf2.write(stuffing_buf, stuffing_len);
-                        impl->send(buf2, nullptr);
-                    }
-                }
+                const AntiCensorship::Config &ac = config->ac;
+                if (ac.junk_first && ac.junk_packet_count > 0)
+                    send_junk_packets();
+                send_pre_connect_packets();
+                if (!ac.junk_first && ac.junk_packet_count > 0)
+                    send_junk_packets();
+                if (ac.udp_stuffing)
+                    send_stuffing_packets();
             }
 
             const int err = impl->send(buf, nullptr);

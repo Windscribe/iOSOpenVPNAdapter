@@ -61,6 +61,7 @@
 #include <openvpn/crypto/bs64_data_limit.hpp>
 #include <openvpn/log/sessionstats.hpp>
 #include <openvpn/ssl/protostack.hpp>
+#include <openvpn/client/anti_censorship.hpp> // AntiCensorship (tcp-split-reset)
 #include <openvpn/ssl/psid.hpp>
 #include <openvpn/ssl/tlsprf.hpp>
 #include <openvpn/ssl/datalimit.hpp>
@@ -385,6 +386,10 @@ class ProtoContext : public logging::LoggingMixin<OPENVPN_DEBUG_PROTO,
         // If relay mode is enabled, connect to a special OpenVPN
         // server that acts as a relay/proxy to a second server.
         bool relay_mode = false;
+
+        // Anti-censorship: send multiple hard-reset packets (TCP only),
+        // see openvpn/client/anti_censorship.hpp
+        bool tcp_split_reset = false;
 
         // defer data channel initialization until after client options pull
         bool dc_deferred = false;
@@ -1888,6 +1893,19 @@ class ProtoContext : public logging::LoggingMixin<OPENVPN_DEBUG_PROTO,
             if (state == C_INITIAL || state == S_INITIAL)
             {
                 send_reset();
+
+                // Anti-censorship (tcp-split-reset): send additional
+                // hard-reset packets on reliable (TCP) transports so that
+                // the peer receives 2..3 resets, like the OpenVPN 2
+                // anti-censorship patch.  Each packet gets its own packet
+                // id from the reliability layer.
+                if (proto.config->tcp_split_reset && is_reliable)
+                {
+                    const unsigned int count = AntiCensorship::multiple_resets(*proto.config->rng);
+                    for (unsigned int i = 1; i < count; i++)
+                        send_reset();
+                }
+
                 set_state(state + 1);
                 dirty = true;
             }

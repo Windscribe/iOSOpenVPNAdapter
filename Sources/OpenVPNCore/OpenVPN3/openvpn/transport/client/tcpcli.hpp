@@ -25,10 +25,13 @@
 #include <openvpn/transport/client/transbase.hpp>
 #include <openvpn/transport/socket_protect.hpp>
 #include <openvpn/client/remotelist.hpp>
-#include <openvpn/random/randapi.hpp>
+#include <openvpn/client/anti_censorship.hpp>
+
+#if !defined(OPENVPN_PLATFORM_WIN)
 #include <unistd.h> // for usleep
 #include <arpa/inet.h> // for htons
 #include <sys/socket.h> // for send
+#endif
 
 namespace openvpn::TCPTransport {
 
@@ -42,9 +45,10 @@ class ClientConfig : public TransportClientFactory
     Frame::Ptr frame;
     SessionStats::Ptr stats;
 
-    // WINDSCRIBE ANTICENSORSHIP: TCP split/reset support
+    // Anti-censorship: TCP split-reset support.  Only ac.tcp_split_reset
+    // is used on the TCP transport.
+    AntiCensorship::Config ac;
     RandomAPI::Ptr rng;
-    bool do_split_reset = false;
 
     SocketProtect *socket_protect;
 
@@ -216,49 +220,14 @@ class Client : public TransportClient, AsyncResolvableTCP
     {
         if (impl)
         {
-            // WINDSCRIBE ANTICENSORSHIP: TCP Split/Reset implementation
-            // Splits TCP handshake packets into smaller fragments to evade DPI
-            #define X_P_OPCODE_SHIFT 3
-            #define X_CONTROL_HARD_RESET_CLIENT_V2 7
-            #define X_CONTROL_HARD_RESET_CLIENT_V3 10
-            #define SPLIT_PACKET_LEN_MAX 10
-
-            uint8_t opcode = cbuf.c_data()[0] >> X_P_OPCODE_SHIFT;
-
-            if (config->do_split_reset && config->rng &&
-                (opcode == X_CONTROL_HARD_RESET_CLIENT_V2 || opcode == X_CONTROL_HARD_RESET_CLIENT_V3))
+            // Anti-censorship: TCP split-reset -- write the client
+            // hard-reset packet in small (2..9 byte) pieces, delaying
+            // 5ms after each piece, so that DPI middleboxes do not see
+            // the reset packet as one contiguous TCP stream.
+            if (config->ac.tcp_split_reset && config->rng && !cbuf.empty()
+                && AntiCensorship::is_client_hard_reset(cbuf.c_data()[0]))
             {
-                // impl->set_raw_mode_write(true); // Not available in our version
-
-                uint16_t net_len;
-                int left;
-                unsigned char stuffing_buf[1024] = {0};
-                int split_num = config->rng->randrange32(2, SPLIT_PACKET_LEN_MAX);
-                BufferAllocated bufc(cbuf, 0);
-
-                // Read data to stuffing_buf
-                bufc.read(stuffing_buf, cbuf.size() % sizeof(stuffing_buf));
-
-                BufferAllocated buf(split_num, 0);
-
-                // Send only data length first
-                net_len = htons(cbuf.size());
-                ::send(socket.native_handle(), &net_len, sizeof(net_len), 0);
-
-                left = cbuf.size();
-                // Send content in small pieces
-                for (int i = 0; i < int(cbuf.size()); i += split_num)
-                {
-                    int chunk_size = (split_num < left) ? split_num : left;
-                    // Send using native send() function and sleep for 5ms afterwards
-                    // This is the only way to get segmented TCP even with NODELAY
-                    ::send(socket.native_handle(), &stuffing_buf[i], chunk_size, 0);
-                    usleep(5000); // 5ms delay between fragments
-                    left -= split_num;
-                }
-
-                // impl->set_raw_mode_write(false); // Not available in our version
-                return true;
+                return split_reset_send(cbuf);
             }
 
             BufferAllocated buf(cbuf, 0);
@@ -274,6 +243,50 @@ class Client : public TransportClient, AsyncResolvableTCP
             return impl->send(buf);
         else
             return false;
+    }
+
+  private:
+    // Anti-censorship: send a packet directly on the socket, split into
+    // small pieces with a 5ms delay between pieces (like
+    // ac_tcp_split_reset_write() of the OpenVPN 2 patch).  The
+    // length-prefixed framing of the OpenVPN TCP protocol is written
+    // manually since we bypass the asio send queue.
+    bool split_reset_send(const Buffer &cbuf)
+    {
+#ifdef OPENVPN_PLATFORM_WIN
+        // Windows is not supported by the split-reset feature
+        BufferAllocated buf(cbuf, 0);
+        return impl->send(buf);
+#else
+        // ensure each piece is sent as its own TCP segment
+        socket.set_option(openvpn_io::ip::tcp::no_delay(true));
+
+        // send the 2-byte length prefix on its own
+        const uint16_t net_len = htons((uint16_t)cbuf.size());
+        if (::send(socket.native_handle(), &net_len, sizeof(net_len), 0) < 0)
+            return false;
+
+        size_t left = cbuf.size();
+        const size_t total = left;
+        size_t off = 0;
+
+        while (left)
+        {
+            // random piece size, 2..9 bytes
+            const size_t piece_len = AntiCensorship::SPLIT_PIECE_LEN_MIN
+                                     + config->rng->randrange32((uint32_t)(AntiCensorship::SPLIT_PIECE_LEN_MAX - AntiCensorship::SPLIT_PIECE_LEN_MIN + 1));
+            const size_t piece = std::min(piece_len, left);
+            if (::send(socket.native_handle(), cbuf.c_data() + off, piece, 0) < 0)
+                return false;
+
+            left -= piece;
+            off += piece;
+            usleep(5000); // 5ms delay between fragments
+        }
+
+        OPENVPN_LOG("anti-censorship: TCP split-reset sent (" << total << " bytes in pieces)");
+        return true;
+#endif
     }
 
     void tcp_eof_handler() // called by LinkImpl::Base

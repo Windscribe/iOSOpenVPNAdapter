@@ -52,6 +52,7 @@
 #include <openvpn/client/clilife.hpp>
 
 #include <openvpn/ssl/sslchoose.hpp>
+#include <openvpn/client/anti_censorship.hpp>
 
 #ifdef OPENVPN_GREMLIN
 #include <openvpn/transport/gremlin.hpp>
@@ -212,9 +213,9 @@ class ClientOptions : public RC<thread_unsafe_refcount>
         // parse general client options
         const ParseClientConfig pcc(opt);
 
-        // WINDSCRIBE ANTICENSORSHIP: Parse UDP stuffing and TCP split/reset options
-        do_udp_stuffing = opt.exists("udp-stuffing");
-        do_tcp_split_reset = opt.exists("tcp-split-reset");
+        // Anti-censorship: parse udp-stuffing, tcp-split-reset, i1..i5,
+        // jc/jmin/jmax and junk-first options
+        AntiCensorship::parse_options(opt, ac);
 
         // creds
         userlocked_username = pcc.userlockedUsername();
@@ -1305,6 +1306,10 @@ class ClientOptions : public RC<thread_unsafe_refcount>
         cp->rng = rng;
         cp->prng = prng;
 
+        // Anti-censorship: tcp-split-reset generates multiple hard-reset
+        // packets on TCP transports
+        cp->tcp_split_reset = ac.tcp_split_reset;
+
         return cp;
     }
 
@@ -1312,6 +1317,14 @@ class ClientOptions : public RC<thread_unsafe_refcount>
     {
         // get current transport protocol
         const Protocol &transport_protocol = remote_list->current_transport_protocol();
+
+        // Anti-censorship: warn about UDP-only options if the transport
+        // protocol is not UDP (like the OpenVPN 2 patch does)
+        if (!transport_protocol.is_udp() && !ac_warned)
+        {
+            ac_warned = true;
+            AntiCensorship::warn_wrong_proto(ac, transport_protocol);
+        }
 
         // If we are connecting over a proxy, and TCP protocol is required, but current
         // transport protocol is NOT TCP, we will throw an internal error because this
@@ -1387,9 +1400,9 @@ class ClientOptions : public RC<thread_unsafe_refcount>
                 udpconf->stats = cli_stats;
                 udpconf->socket_protect = socket_protect;
                 udpconf->server_addr_float = server_addr_float;
-                // WINDSCRIBE ANTICENSORSHIP: Enable UDP stuffing
+                // Anti-censorship: udp-stuffing / junk / pre-connect packets
+                udpconf->ac = ac;
                 udpconf->rng = rng;
-                udpconf->do_stuffing = do_udp_stuffing;
 #ifdef OPENVPN_GREMLIN
                 udpconf->gremlin_config = gremlin_config;
 #endif
@@ -1407,9 +1420,9 @@ class ClientOptions : public RC<thread_unsafe_refcount>
                 tcpconf->frame = frame;
                 tcpconf->stats = cli_stats;
                 tcpconf->socket_protect = socket_protect;
-                // WINDSCRIBE ANTICENSORSHIP: Enable TCP split/reset
+                // Anti-censorship: TCP split-reset
+                tcpconf->ac = ac;
                 tcpconf->rng = rng;
-                tcpconf->do_split_reset = do_tcp_split_reset;
 #ifdef OPENVPN_TLS_LINK
                 if (transport_protocol.is_tls())
                     tcpconf->use_tls = true;
@@ -1431,6 +1444,12 @@ class ClientOptions : public RC<thread_unsafe_refcount>
 
     Time now_; // current time
     StrongRandomAPI::Ptr rng;
+
+    // Anti-censorship configuration (udp-stuffing, tcp-split-reset,
+    // i1..i5, jc/jmin/jmax, junk-first)
+    AntiCensorship::Config ac;
+    bool ac_warned = false;
+
     RandomAPI::Ptr prng;
     Frame::Ptr frame;
     Layer layer;
@@ -1458,9 +1477,6 @@ class ClientOptions : public RC<thread_unsafe_refcount>
     bool creds_locked;
     bool asio_work_always_on_;
     bool synchronous_dns_lookup;
-    // WINDSCRIBE ANTICENSORSHIP: UDP stuffing and TCP split/reset flags
-    bool do_udp_stuffing = false;
-    bool do_tcp_split_reset = false;
     PushOptionsBase::Ptr push_base;
     OptionList::FilterBase::Ptr pushed_options_filter;
     ClientLifeCycle::Ptr client_lifecycle;
