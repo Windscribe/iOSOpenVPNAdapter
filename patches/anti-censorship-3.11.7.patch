@@ -1,0 +1,830 @@
+From 0a221dbd532c3bbfb72ea38f15bdad9fdacaad38 Mon Sep 17 00:00:00 2001
+From: Andre Fonseca <andre@windscribe.com>
+Date: Tue, 17 Nov 2026 14:08:43 +0000
+Subject: [PATCH] Anti-censorship: port v2 patches (udp-stuffing,
+ tcp-split-reset, i1-i5, Jc/Jmin/Jmax, junk-first) to OpenVPN 3.11.7
+
+Ported from OpenVPN 2.7 anti-censorship patches, adapted to the
+3.11.7 transport/proto layer. All logic kept in anti_censorship.hpp
+for out-of-tree maintenance.
+---
+ openvpn/client/anti_censorship.hpp  | 460 ++++++++++++++++++++++++++++
+ openvpn/client/cliopt.hpp           |  29 ++
+ openvpn/ssl/proto.hpp               |  18 ++
+ openvpn/transport/client/tcpcli.hpp |  66 ++++
+ openvpn/transport/client/udpcli.hpp |  91 ++++++
+ 5 files changed, 664 insertions(+)
+ create mode 100644 openvpn/client/anti_censorship.hpp
+
+diff --git a/openvpn/client/anti_censorship.hpp b/openvpn/client/anti_censorship.hpp
+new file mode 100644
+index 00000000..be9acf6d
+--- /dev/null
++++ b/openvpn/client/anti_censorship.hpp
+@@ -0,0 +1,460 @@
++//    OpenVPN -- An application to securely tunnel IP networks
++//               over a single port, with support for SSL/TLS-based
++//               session authentication, key exchange,
++//               packet encryption, packet authentication, and
++//               packet compression.
++//
++//    SPDX-License-Identifier: MPL-2.0 OR AGPL-3.0-only WITH openvpn3-openssl-exception
++//
++
++// Anti-censorship features for OpenVPN 3.
++//
++// This module is the OpenVPN 3 port of the OpenVPN 2 anti-censorship
++// patches (anti_censorship.c/h) and implements:
++//
++//   - udp-stuffing    : send random UDP packets before the hard-reset packet
++//   - tcp-split-reset : split the TCP hard-reset packet into small pieces
++//                       and emit multiple hard-reset packets
++//   - i1..i5          : user-defined pre-connect packets sent before the
++//                       hard-reset packet (UDP only)
++//   - jc/jmin/jmax    : Amnezia-style junk packets sent around the i1..i5
++//                       pre-connect packets (UDP only)
++//   - junk-first      : send junk packets before (instead of after) i1..i5
++//
++// All logic is intentionally kept in this separate file to ease maintenance
++// of out-of-tree code, mirroring the anti_censorship.c/h layout of the
++// OpenVPN 2 patches.
++
++#ifndef OPENVPN_CLIENT_ANTICENSORSHIP_H
++#define OPENVPN_CLIENT_ANTICENSORSHIP_H
++
++#include <algorithm>
++#include <array>
++#include <cctype>
++#include <cstdint>
++#include <cstdlib>
++#include <cstring>
++#include <string>
++
++#ifdef _WIN32
++#include <winsock2.h>
++#else
++#include <arpa/inet.h>
++#endif
++
++#include <ctime>
++
++#include <openvpn/common/exception.hpp>
++#include <openvpn/common/options.hpp>
++#include <openvpn/common/size.hpp>
++#include <openvpn/buffer/buffer.hpp>
++#include <openvpn/random/randapi.hpp>
++#include <openvpn/transport/protocol.hpp>
++
++namespace openvpn::AntiCensorship {
++
++// UDP stuffing parameters (same values as the OpenVPN 2 patch)
++constexpr size_t STUFFING_LEN_MAX = 900;
++constexpr size_t STUFFING_LEN_MIN = 200;
++constexpr size_t STUFFING_NUM_MAX = 100;
++constexpr size_t STUFFING_NUM_MIN = 10;
++
++// TCP split-reset parameters
++constexpr size_t SPLIT_PIECE_LEN_MAX = 9; // random piece length is 2..9 bytes
++constexpr size_t SPLIT_PIECE_LEN_MIN = 2;
++constexpr size_t SPLIT_RESET_COUNT_MAX = 3; // 2..3 hard-reset packets
++constexpr size_t SPLIT_RESET_COUNT_MIN = 2;
++
++// AmneziaWG-style pre-connect packet (i1..i5) parameters
++constexpr size_t PRE_CONNECT_COUNT = 5;    // number of i1..i5 slots
++constexpr size_t PRE_CONNECT_MAX = 1400;   // max assembled packet size
++constexpr size_t TAG_RAND_MAX = 1400;      // max bytes for <r N>
++constexpr size_t TAG_RANDC_MAX = 1400;     // max chars for <rc N>/<rd N>
++
++// Junk packet parameters (jc/jmin/jmax)
++constexpr int JUNK_PACKET_COUNT_MAX = 1000;
++constexpr int JUNK_PACKET_SIZE_MAX = 1400;
++
++// OpenVPN packet opcodes needed by the anti-censorship logic.
++constexpr unsigned int P_OPCODE_SHIFT = 3;
++constexpr unsigned int P_CONTROL_HARD_RESET_CLIENT_V2 = 7;
++constexpr unsigned int P_CONTROL_HARD_RESET_SERVER_V2 = 8;
++constexpr unsigned int P_CONTROL_HARD_RESET_CLIENT_V3 = 10;
++
++/**
++ * Extract the opcode from the first byte of an OpenVPN packet.
++ */
++inline unsigned int opcode_extract(const unsigned char first_byte)
++{
++    return first_byte >> P_OPCODE_SHIFT;
++}
++
++/**
++ * True if the packet is a hard-reset packet (any direction).
++ */
++inline bool is_hard_reset(const unsigned char first_byte)
++{
++    const unsigned int op = opcode_extract(first_byte);
++    return op == P_CONTROL_HARD_RESET_CLIENT_V2
++           || op == P_CONTROL_HARD_RESET_CLIENT_V3
++           || op == P_CONTROL_HARD_RESET_SERVER_V2;
++}
++
++/**
++ * True if the packet is a client hard-reset packet (the packet type
++ * a client emits to initiate a session).
++ */
++inline bool is_client_hard_reset(const unsigned char first_byte)
++{
++    const unsigned int op = opcode_extract(first_byte);
++    return op == P_CONTROL_HARD_RESET_CLIENT_V2
++           || op == P_CONTROL_HARD_RESET_CLIENT_V3;
++}
++
++// Configuration of the anti-censorship features, parsed from the
++// OpenVPN configuration options.
++struct Config
++{
++    bool udp_stuffing = false; // udp-stuffing
++    bool tcp_split_reset = false; // tcp-split-reset
++    bool junk_first = false;      // junk-first
++
++    int junk_packet_count = 0;    // jc: number of junk packets
++    int junk_packet_min_size = 0; // jmin: minimum junk packet size
++    int junk_packet_max_size = 0; // jmax: maximum junk packet size
++
++    std::array<std::string, PRE_CONNECT_COUNT> i_packets; // i1..i5 specs
++
++    bool udp_pre_reset_defined() const
++    {
++        return udp_stuffing || junk_packet_count > 0
++               || std::any_of(i_packets.begin(),
++                              i_packets.end(),
++                              [](const std::string &s)
++                              { return !s.empty(); });
++    }
++};
++
++/**
++ * Parse the anti-censorship options from an OptionList.
++ *
++ * All recognized options are marked as touched so that they don't show
++ * up as unknown/unsupported options.  Invalid values throw option_error,
++ * like other options.
++ *
++ * This mirrors the option parsing of the OpenVPN 2 patches:
++ *   udp-stuffing, tcp-split-reset, i1..i5/I1..I5, jc/Jc, jmin/Jmin,
++ *   jmax/Jmax and junk-first.
++ */
++inline void parse_options(const OptionList &opt, Config &cfg)
++{
++    auto touch = [](const OptionList &optlist, const char *name)
++    {
++        const Option *o = optlist.get_ptr(name);
++        if (o)
++            o->touch();
++    };
++
++    // udp-stuffing (no parameter)
++    if (opt.exists("udp-stuffing"))
++    {
++        touch(opt, "udp-stuffing");
++        cfg.udp_stuffing = true;
++    }
++
++    // tcp-split-reset (no parameter)
++    if (opt.exists("tcp-split-reset"))
++    {
++        touch(opt, "tcp-split-reset");
++        cfg.tcp_split_reset = true;
++    }
++
++    // i1..i5 (both lower and upper case accepted, like OpenVPN 2)
++    for (size_t i = 0; i < PRE_CONNECT_COUNT; ++i)
++    {
++        const std::string lower = "i" + std::to_string(i + 1);
++        const std::string upper = "I" + std::to_string(i + 1);
++        for (const char *name : {lower.c_str(), upper.c_str()})
++        {
++            const Option *o = opt.get_ptr(name);
++            if (o)
++            {
++                o->min_args(2);
++                o->exact_args(2);
++                cfg.i_packets[i] = o->get(1, 0); // no length limit
++                o->touch();
++            }
++        }
++    }
++
++    // jc/jmin/jmax
++    {
++        const Option *o = opt.get_ptr("jc");
++        if (!o)
++            o = opt.get_ptr("Jc");
++        if (o)
++        {
++            o->min_args(2);
++            o->exact_args(2);
++            const int val = o->get_num<int>(1);
++            if (val < 0 || val > JUNK_PACKET_COUNT_MAX)
++                OPENVPN_THROW_ARG1(option_error, ERR_INVALID_OPTION_VAL, o->err_ref() << " must be between 0 and " << JUNK_PACKET_COUNT_MAX);
++            cfg.junk_packet_count = val;
++            o->touch();
++        }
++    }
++    for (const char *minname : {"jmin", "Jmin"})
++    {
++        const Option *o = opt.get_ptr(minname);
++        if (o)
++        {
++            o->min_args(2);
++            o->exact_args(2);
++            const int val = o->get_num<int>(1);
++            if (val < 1 || val > JUNK_PACKET_SIZE_MAX)
++                OPENVPN_THROW_ARG1(option_error, ERR_INVALID_OPTION_VAL, o->err_ref() << " must be between 1 and " << JUNK_PACKET_SIZE_MAX);
++            cfg.junk_packet_min_size = val;
++            o->touch();
++        }
++    }
++    for (const char *maxname : {"jmax", "Jmax"})
++    {
++        const Option *o = opt.get_ptr(maxname);
++        if (o)
++        {
++            o->min_args(2);
++            o->exact_args(2);
++            const int val = o->get_num<int>(1);
++            if (val < 1 || val > JUNK_PACKET_SIZE_MAX)
++                OPENVPN_THROW_ARG1(option_error, ERR_INVALID_OPTION_VAL, o->err_ref() << " must be between 1 and " << JUNK_PACKET_SIZE_MAX);
++            cfg.junk_packet_max_size = val;
++            o->touch();
++        }
++    }
++
++    // junk-first (no parameter)
++    if (opt.exists("junk-first"))
++    {
++        touch(opt, "junk-first");
++        cfg.junk_first = true;
++    }
++}
++
++/**
++ * Log the "UDP only" warnings for options used with a non-UDP transport,
++ * mirroring options_postprocess_mutate_ce() of the OpenVPN 2 patches.
++ * Called once the actual transport protocol is known.
++ */
++inline void warn_wrong_proto(const Config &cfg, const Protocol &proto)
++{
++    if (proto.is_udp())
++        return;
++
++    if (std::any_of(cfg.i_packets.begin(),
++                    cfg.i_packets.end(),
++                    [](const std::string &s)
++                    { return !s.empty(); }))
++    {
++        OPENVPN_LOG("NOTICE: --I1-I5 are suitable only for proto UDP");
++    }
++
++    if (cfg.junk_packet_count > 0 || cfg.junk_packet_min_size > 0
++        || cfg.junk_packet_max_size > 0)
++    {
++        OPENVPN_LOG("NOTICE: --Jc/--Jmin/--Jmax are suitable only for proto UDP");
++    }
++
++    if (cfg.junk_packet_min_size > 0 && cfg.junk_packet_max_size > 0
++        && cfg.junk_packet_min_size > cfg.junk_packet_max_size)
++    {
++        OPENVPN_LOG("NOTICE: --Jmin (" << cfg.junk_packet_min_size
++                                      << ") is greater than --Jmax ("
++                                      << cfg.junk_packet_max_size
++                                      << "), Jmin will be used as packet size");
++    }
++}
++
++/**
++ * Parse a hex string (with optional "0x" prefix) and append the decoded
++ * bytes to buf.  Returns true on success.
++ */
++inline bool parse_hex_tag(const char *hex, size_t hexlen, Buffer &out)
++{
++    // skip optional "0x" / "0X" prefix
++    if (hexlen >= 2 && hex[0] == '0' && (hex[1] == 'x' || hex[1] == 'X'))
++    {
++        hex += 2;
++        hexlen -= 2;
++    }
++
++    if (hexlen == 0 || hexlen % 2 != 0)
++        return false;
++
++    for (size_t i = 0; i < hexlen; i += 2)
++    {
++        if (!std::isxdigit((unsigned char)hex[i]) || !std::isxdigit((unsigned char)hex[i + 1]))
++            return false;
++
++        unsigned char byte = (unsigned char)(
++            (std::isdigit((unsigned char)hex[i]) ? hex[i] - '0' : std::tolower((unsigned char)hex[i]) - 'a' + 10) << 4
++            | (std::isdigit((unsigned char)hex[i + 1]) ? hex[i + 1] - '0' : std::tolower((unsigned char)hex[i + 1]) - 'a' + 10));
++        out.write(&byte, 1);
++    }
++    return true;
++}
++
++/**
++ * Build a pre-connect packet buffer from a tag-spec string.
++ *
++ * Tag syntax (identical to the OpenVPN 2 patches):
++ *   <b hex_data>   static bytes (hex, even length, optional 0x prefix)
++ *   <t>            32-bit Unix timestamp, network byte order
++ *   <r N>          N cryptographically secure random bytes (N <= TAG_RAND_MAX)
++ *   <rc N>         N random ASCII alphanumeric chars [A-Za-z0-9]
++ *   <rd N>         N random decimal digit chars [0-9]
++ *
++ * @param spec  the i1..i5 option value
++ * @param out   output buffer (capacity PRE_CONNECT_MAX, empty)
++ * @param rng   random number generator
++ * @return true on success, false on parse error (the packet is skipped)
++ */
++inline bool build_pre_connect_packet(const std::string &spec, BufferAllocated &out, RandomAPI &rng)
++{
++    const char *p = spec.c_str();
++
++    while (*p)
++    {
++        // skip whitespace between tags
++        while (*p == ' ' || *p == '\t')
++            p++;
++
++        if (*p == '\0')
++            break;
++
++        if (*p != '<')
++        {
++            OPENVPN_LOG("anti-censorship: build_pre_connect_packet: expected '<', got '" << *p << "'");
++            return false;
++        }
++        p++; // skip '<'
++
++        // find closing '>'
++        const char *close = std::strchr(p, '>');
++        if (!close)
++        {
++            OPENVPN_LOG("anti-censorship: build_pre_connect_packet: unclosed tag");
++            return false;
++        }
++
++        const size_t taglen = (size_t)(close - p);
++        const std::string tag(p, taglen);
++        p = close + 1; // advance past '>'
++
++        if (tag.empty())
++        {
++            OPENVPN_LOG("anti-censorship: build_pre_connect_packet: empty tag");
++            return false;
++        }
++
++        // <t>: 32-bit Unix timestamp, network byte order
++        if (tag == "t")
++        {
++            const uint32_t ts = htonl((uint32_t)time(nullptr));
++            out.write(&ts, sizeof(ts));
++        }
++        // <b hex_data>: static hex-encoded payload
++        else if (tag.size() > 2 && tag[0] == 'b' && tag[1] == ' ')
++        {
++            const char *hexdata = tag.c_str() + 2;
++            if (!parse_hex_tag(hexdata, tag.size() - 2, out))
++            {
++                OPENVPN_LOG("anti-censorship: build_pre_connect_packet: invalid hex in <b> tag: " << hexdata);
++                return false;
++            }
++        }
++        // <r N>: N cryptographically secure random bytes
++        else if (tag.size() > 2 && tag[0] == 'r' && tag[1] == ' ')
++        {
++            const int n = std::atoi(tag.c_str() + 2);
++            if (n <= 0 || (size_t)n > TAG_RAND_MAX)
++            {
++                OPENVPN_LOG("anti-censorship: build_pre_connect_packet: <r> length out of range: " << n);
++                return false;
++            }
++            if (out.size() + (size_t)n > PRE_CONNECT_MAX)
++            {
++                OPENVPN_LOG("anti-censorship: build_pre_connect_packet: <r> packet exceeds buffer size");
++                return false;
++            }
++            unsigned char randbuf[TAG_RAND_MAX];
++            rng.rand_bytes(randbuf, (size_t)n);
++            out.write(randbuf, (size_t)n);
++        }
++        // <rc N>: N random alphanumeric ASCII chars [A-Za-z0-9]
++        else if (tag.size() > 3 && tag[0] == 'r' && tag[1] == 'c' && tag[2] == ' ')
++        {
++            const int n = std::atoi(tag.c_str() + 3);
++            if (n <= 0 || (size_t)n > TAG_RANDC_MAX)
++            {
++                OPENVPN_LOG("anti-censorship: build_pre_connect_packet: <rc> length out of range: " << n);
++                return false;
++            }
++            if (out.size() + (size_t)n > PRE_CONNECT_MAX)
++            {
++                OPENVPN_LOG("anti-censorship: build_pre_connect_packet: <rc> packet exceeds buffer size");
++                return false;
++            }
++            static const char alphanum[] =
++                "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
++            for (int i = 0; i < n; i++)
++            {
++                unsigned char idx;
++                rng.rand_bytes(&idx, 1);
++                const unsigned char ch = (unsigned char)alphanum[idx % (sizeof(alphanum) - 1)];
++                out.write(&ch, 1);
++            }
++        }
++        // <rd N>: N random decimal digit chars [0-9]
++        else if (tag.size() > 3 && tag[0] == 'r' && tag[1] == 'd' && tag[2] == ' ')
++        {
++            const int n = std::atoi(tag.c_str() + 3);
++            if (n <= 0 || (size_t)n > TAG_RANDC_MAX)
++            {
++                OPENVPN_LOG("anti-censorship: build_pre_connect_packet: <rd> length out of range: " << n);
++                return false;
++            }
++            if (out.size() + (size_t)n > PRE_CONNECT_MAX)
++            {
++                OPENVPN_LOG("anti-censorship: build_pre_connect_packet: <rd> packet exceeds buffer size");
++                return false;
++            }
++            for (int i = 0; i < n; i++)
++            {
++                unsigned char rnd;
++                rng.rand_bytes(&rnd, 1);
++                const unsigned char ch = (unsigned char)('0' + (rnd % 10));
++                out.write(&ch, 1);
++            }
++        }
++        else
++        {
++            OPENVPN_LOG("anti-censorship: build_pre_connect_packet: unknown tag: <" << tag << ">");
++            return false;
++        }
++    }
++
++    return true;
++}
++
++/**
++ * Number of hard-reset packets to send for the TCP split-reset feature.
++ * Returns 2 or 3 packets (chosen randomly), like the OpenVPN 2 patch.
++ */
++inline unsigned int multiple_resets(RandomAPI &rng)
++{
++    return 2 + rng.randrange32(2); // randrange32(2) yields 0..1
++}
++
++} // namespace openvpn::AntiCensorship
++
++#endif // OPENVPN_CLIENT_ANTICENSORSHIP_H
+diff --git a/openvpn/client/cliopt.hpp b/openvpn/client/cliopt.hpp
+index c534c465..8712fd07 100644
+--- a/openvpn/client/cliopt.hpp
++++ b/openvpn/client/cliopt.hpp
+@@ -52,6 +52,7 @@
+ #include <openvpn/client/clilife.hpp>
+ 
+ #include <openvpn/ssl/sslchoose.hpp>
++#include <openvpn/client/anti_censorship.hpp>
+ 
+ #ifdef OPENVPN_GREMLIN
+ #include <openvpn/transport/gremlin.hpp>
+@@ -218,6 +219,10 @@ class ClientOptions : public RC<thread_unsafe_refcount>
+         // parse general client options
+         const ParseClientConfig pcc(opt);
+ 
++        // Anti-censorship: parse udp-stuffing, tcp-split-reset, i1..i5,
++        // jc/jmin/jmax and junk-first options
++        AntiCensorship::parse_options(opt, ac);
++
+         // creds
+         userlocked_username = pcc.userlockedUsername();
+         autologin = pcc.autologin();
+@@ -1336,6 +1341,10 @@ class ClientOptions : public RC<thread_unsafe_refcount>
+         cp->rng = rng;
+         cp->prng = prng;
+ 
++        // Anti-censorship: tcp-split-reset generates multiple hard-reset
++        // packets on TCP transports
++        cp->tcp_split_reset = ac.tcp_split_reset;
++
+         return cp;
+     }
+ 
+@@ -1344,6 +1353,14 @@ class ClientOptions : public RC<thread_unsafe_refcount>
+         // get current transport protocol
+         const Protocol &transport_protocol = remote_list->current_transport_protocol();
+ 
++        // Anti-censorship: warn about UDP-only options if the transport
++        // protocol is not UDP (like the OpenVPN 2 patch does)
++        if (!transport_protocol.is_udp() && !ac_warned)
++        {
++            ac_warned = true;
++            AntiCensorship::warn_wrong_proto(ac, transport_protocol);
++        }
++
+         // If we are connecting over a proxy, and TCP protocol is required, but current
+         // transport protocol is NOT TCP, we will throw an internal error because this
+         // should have been caught earlier in RemoteList::handle_proto_override.
+@@ -1418,6 +1435,9 @@ class ClientOptions : public RC<thread_unsafe_refcount>
+                 udpconf->stats = cli_stats;
+                 udpconf->socket_protect = socket_protect;
+                 udpconf->server_addr_float = server_addr_float;
++                // Anti-censorship: udp-stuffing / junk / pre-connect packets
++                udpconf->ac = ac;
++                udpconf->rng = rng;
+ #ifdef OPENVPN_GREMLIN
+                 udpconf->gremlin_config = gremlin_config;
+ #endif
+@@ -1435,6 +1455,9 @@ class ClientOptions : public RC<thread_unsafe_refcount>
+                 tcpconf->frame = frame;
+                 tcpconf->stats = cli_stats;
+                 tcpconf->socket_protect = socket_protect;
++                // Anti-censorship: TCP split-reset
++                tcpconf->ac = ac;
++                tcpconf->rng = rng;
+ #ifdef OPENVPN_TLS_LINK
+                 if (transport_protocol.is_tls())
+                     tcpconf->use_tls = true;
+@@ -1456,6 +1479,12 @@ class ClientOptions : public RC<thread_unsafe_refcount>
+ 
+     Time now_; // current time
+     StrongRandomAPI::Ptr rng;
++
++    // Anti-censorship configuration (udp-stuffing, tcp-split-reset,
++    // i1..i5, jc/jmin/jmax, junk-first)
++    AntiCensorship::Config ac;
++    bool ac_warned = false;
++
+     RandomAPI::Ptr prng;
+     Frame::Ptr frame;
+     Layer layer;
+diff --git a/openvpn/ssl/proto.hpp b/openvpn/ssl/proto.hpp
+index 4c01d192..13c06707 100644
+--- a/openvpn/ssl/proto.hpp
++++ b/openvpn/ssl/proto.hpp
+@@ -61,6 +61,7 @@
+ #include <openvpn/crypto/bs64_data_limit.hpp>
+ #include <openvpn/log/sessionstats.hpp>
+ #include <openvpn/ssl/protostack.hpp>
++#include <openvpn/client/anti_censorship.hpp> // AntiCensorship (tcp-split-reset)
+ #include <openvpn/ssl/psid.hpp>
+ #include <openvpn/ssl/tlsprf.hpp>
+ #include <openvpn/ssl/datalimit.hpp>
+@@ -386,6 +387,10 @@ class ProtoContext : public logging::LoggingMixin<OPENVPN_DEBUG_PROTO,
+         // server that acts as a relay/proxy to a second server.
+         bool relay_mode = false;
+ 
++        // Anti-censorship: send multiple hard-reset packets (TCP only),
++        // see openvpn/client/anti_censorship.hpp
++        bool tcp_split_reset = false;
++
+         // defer data channel initialization until after client options pull
+         bool dc_deferred = false;
+ 
+@@ -1888,6 +1893,19 @@ class ProtoContext : public logging::LoggingMixin<OPENVPN_DEBUG_PROTO,
+             if (state == C_INITIAL || state == S_INITIAL)
+             {
+                 send_reset();
++
++                // Anti-censorship (tcp-split-reset): send additional
++                // hard-reset packets on reliable (TCP) transports so that
++                // the peer receives 2..3 resets, like the OpenVPN 2
++                // anti-censorship patch.  Each packet gets its own packet
++                // id from the reliability layer.
++                if (proto.config->tcp_split_reset && is_reliable)
++                {
++                    const unsigned int count = AntiCensorship::multiple_resets(*proto.config->rng);
++                    for (unsigned int i = 1; i < count; i++)
++                        send_reset();
++                }
++
+                 set_state(state + 1);
+                 dirty = true;
+             }
+diff --git a/openvpn/transport/client/tcpcli.hpp b/openvpn/transport/client/tcpcli.hpp
+index 1cd7b66d..7cc86c8b 100644
+--- a/openvpn/transport/client/tcpcli.hpp
++++ b/openvpn/transport/client/tcpcli.hpp
+@@ -25,6 +25,13 @@
+ #include <openvpn/transport/client/transbase.hpp>
+ #include <openvpn/transport/socket_protect.hpp>
+ #include <openvpn/client/remotelist.hpp>
++#include <openvpn/client/anti_censorship.hpp>
++
++#if !defined(OPENVPN_PLATFORM_WIN)
++#include <unistd.h> // for usleep
++#include <arpa/inet.h> // for htons
++#include <sys/socket.h> // for send
++#endif
+ 
+ namespace openvpn::TCPTransport {
+ 
+@@ -38,6 +45,11 @@ class ClientConfig : public TransportClientFactory
+     Frame::Ptr frame;
+     SessionStats::Ptr stats;
+ 
++    // Anti-censorship: TCP split-reset support.  Only ac.tcp_split_reset
++    // is used on the TCP transport.
++    AntiCensorship::Config ac;
++    RandomAPI::Ptr rng;
++
+     SocketProtect *socket_protect;
+ 
+ #ifdef OPENVPN_TLS_LINK
+@@ -208,6 +220,16 @@ class Client : public TransportClient, AsyncResolvableTCP
+     {
+         if (impl)
+         {
++            // Anti-censorship: TCP split-reset -- write the client
++            // hard-reset packet in small (2..9 byte) pieces, delaying
++            // 5ms after each piece, so that DPI middleboxes do not see
++            // the reset packet as one contiguous TCP stream.
++            if (config->ac.tcp_split_reset && config->rng && !cbuf.empty()
++                && AntiCensorship::is_client_hard_reset(cbuf.c_data()[0]))
++            {
++                return split_reset_send(cbuf);
++            }
++
+             BufferAllocated buf(cbuf, 0);
+             return impl->send(buf);
+         }
+@@ -223,6 +245,50 @@ class Client : public TransportClient, AsyncResolvableTCP
+             return false;
+     }
+ 
++  private:
++    // Anti-censorship: send a packet directly on the socket, split into
++    // small pieces with a 5ms delay between pieces (like
++    // ac_tcp_split_reset_write() of the OpenVPN 2 patch).  The
++    // length-prefixed framing of the OpenVPN TCP protocol is written
++    // manually since we bypass the asio send queue.
++    bool split_reset_send(const Buffer &cbuf)
++    {
++#ifdef OPENVPN_PLATFORM_WIN
++        // Windows is not supported by the split-reset feature
++        BufferAllocated buf(cbuf, 0);
++        return impl->send(buf);
++#else
++        // ensure each piece is sent as its own TCP segment
++        socket.set_option(openvpn_io::ip::tcp::no_delay(true));
++
++        // send the 2-byte length prefix on its own
++        const uint16_t net_len = htons((uint16_t)cbuf.size());
++        if (::send(socket.native_handle(), &net_len, sizeof(net_len), 0) < 0)
++            return false;
++
++        size_t left = cbuf.size();
++        const size_t total = left;
++        size_t off = 0;
++
++        while (left)
++        {
++            // random piece size, 2..9 bytes
++            const size_t piece_len = AntiCensorship::SPLIT_PIECE_LEN_MIN
++                                     + config->rng->randrange32((uint32_t)(AntiCensorship::SPLIT_PIECE_LEN_MAX - AntiCensorship::SPLIT_PIECE_LEN_MIN + 1));
++            const size_t piece = std::min(piece_len, left);
++            if (::send(socket.native_handle(), cbuf.c_data() + off, piece, 0) < 0)
++                return false;
++
++            left -= piece;
++            off += piece;
++            usleep(5000); // 5ms delay between fragments
++        }
++
++        OPENVPN_LOG("anti-censorship: TCP split-reset sent (" << total << " bytes in pieces)");
++        return true;
++#endif
++    }
++
+     void tcp_eof_handler() // called by LinkImpl::Base
+     {
+         config->stats->error(Error::NETWORK_EOF_ERROR);
+diff --git a/openvpn/transport/client/udpcli.hpp b/openvpn/transport/client/udpcli.hpp
+index 3304bebd..194217ba 100644
+--- a/openvpn/transport/client/udpcli.hpp
++++ b/openvpn/transport/client/udpcli.hpp
+@@ -25,6 +25,7 @@
+ #include <openvpn/transport/client/transbase.hpp>
+ #include <openvpn/transport/socket_protect.hpp>
+ #include <openvpn/client/remotelist.hpp>
++#include <openvpn/client/anti_censorship.hpp>
+ 
+ namespace openvpn::UDPTransport {
+ 
+@@ -40,6 +41,11 @@ class ClientConfig : public TransportClientFactory
+     Frame::Ptr frame;
+     SessionStats::Ptr stats;
+ 
++    // Anti-censorship: udp-stuffing, junk packets and pre-connect (i1..i5)
++    // packets sent before the hard-reset packet
++    AntiCensorship::Config ac;
++    RandomAPI::Ptr rng;
++
+     SocketProtect *socket_protect;
+ 
+ #ifdef OPENVPN_GREMLIN
+@@ -197,10 +203,95 @@ class Client : public TransportClient, AsyncResolvableUDP
+         parent = parent_arg;
+     }
+ 
++    // Anti-censorship: send Jc junk UDP packets of random size between
++    // Jmin and Jmax bytes, filled with random data.
++    void send_junk_packets()
++    {
++        const AntiCensorship::Config &ac = config->ac;
++        int jmin = ac.junk_packet_min_size;
++        int jmax = ac.junk_packet_max_size;
++
++        if (jmin <= 0 || jmax <= 0)
++            return;
++
++        if (jmin > jmax)
++            jmax = jmin;
++
++        const int range = jmax - jmin;
++
++        for (int i = 0; i < ac.junk_packet_count; i++)
++        {
++            // pick a random size in [jmin, jmax]
++            const int pkt_size = jmin + (range > 0 ? (int)config->rng->randrange32((uint32_t)range + 1) : 0);
++
++            BufferAllocated junk_buf((size_t)pkt_size, 0);
++            unsigned char *data = junk_buf.write_alloc((size_t)pkt_size);
++            config->rng->rand_bytes(data, (size_t)pkt_size);
++            impl->send(junk_buf, nullptr);
++        }
++    }
++
++    // Anti-censorship: send the user-defined pre-connect packets (i1..i5)
++    // built from their tag-spec strings.
++    void send_pre_connect_packets()
++    {
++        const AntiCensorship::Config &ac = config->ac;
++        for (size_t i = 0; i < AntiCensorship::PRE_CONNECT_COUNT; i++)
++        {
++            if (ac.i_packets[i].empty())
++                continue;
++
++            BufferAllocated pkt(AntiCensorship::PRE_CONNECT_MAX, 0);
++            if (!AntiCensorship::build_pre_connect_packet(ac.i_packets[i], pkt, *config->rng))
++            {
++                OPENVPN_LOG("anti-censorship: failed to build packet i" << (i + 1) << ", skipping");
++                continue;
++            }
++
++            if (pkt.empty())
++                continue;
++
++            impl->send(pkt, nullptr);
++        }
++    }
++
++    // Anti-censorship: send random UDP stuffing packets (10..99 packets
++    // of 200..899 bytes).
++    void send_stuffing_packets()
++    {
++        const size_t stuffing_num = AntiCensorship::STUFFING_NUM_MIN + config->rng->randrange32((uint32_t)(AntiCensorship::STUFFING_NUM_MAX - AntiCensorship::STUFFING_NUM_MIN));
++
++        for (size_t i = 0; i < stuffing_num; i++)
++        {
++            const size_t stuffing_len = AntiCensorship::STUFFING_LEN_MIN + config->rng->randrange32((uint32_t)(AntiCensorship::STUFFING_LEN_MAX - AntiCensorship::STUFFING_LEN_MIN));
++            BufferAllocated stuffing_buf((size_t)stuffing_len, 0);
++            unsigned char *data = stuffing_buf.write_alloc(stuffing_len);
++            config->rng->rand_bytes(data, stuffing_len);
++            impl->send(stuffing_buf, nullptr);
++        }
++    }
++
+     bool send(const Buffer &buf)
+     {
+         if (impl)
+         {
++            // Anti-censorship: before the hard-reset packet is sent, emit
++            // (in order) the junk packets (junk-first), the pre-connect
++            // packets (i1..i5), the junk packets (default) and the random
++            // UDP stuffing packets.
++            if (!buf.empty() && config->rng
++                && AntiCensorship::is_hard_reset(buf.c_data()[0]))
++            {
++                const AntiCensorship::Config &ac = config->ac;
++                if (ac.junk_first && ac.junk_packet_count > 0)
++                    send_junk_packets();
++                send_pre_connect_packets();
++                if (!ac.junk_first && ac.junk_packet_count > 0)
++                    send_junk_packets();
++                if (ac.udp_stuffing)
++                    send_stuffing_packets();
++            }
++
+             const int err = impl->send(buf, nullptr);
+             if (unlikely(err))
+             {
+-- 
+2.47.3
+

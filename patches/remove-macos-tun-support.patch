@@ -1,0 +1,92 @@
+diff --git a/openvpn/client/cliopt.hpp b/openvpn/client/cliopt.hpp
+--- a/openvpn/client/cliopt.hpp
++++ b/openvpn/client/cliopt.hpp
+@@ -76,12 +76,6 @@
+ #ifdef OPENVPN_COMMAND_AGENT
+ #include <openvpn/client/unix/cmdagent.hpp>
+ #endif
+-#elif defined(OPENVPN_PLATFORM_MAC) && !defined(OPENVPN_FORCE_TUN_NULL)
+-#include <openvpn/tun/mac/client/tuncli.hpp>
+-#include <openvpn/apple/maclife.hpp>
+-#ifdef OPENVPN_COMMAND_AGENT
+-#include <openvpn/client/unix/cmdagent.hpp>
+-#endif
+ #elif defined(OPENVPN_PLATFORM_WIN) && !defined(OPENVPN_FORCE_TUN_NULL)
+ #include <openvpn/tun/win/client/tuncli.hpp>
+ #ifdef OPENVPN_COMMAND_AGENT
+@@ -427,9 +421,6 @@
+                     tunconf->eer_factory.reset(nullptr);
+                 }
+ #endif
+-#if defined(OPENVPN_PLATFORM_MAC)
+-                tunconf->tun_prefix = true;
+-#endif
+                 if (config.clientconf.tunPersist)
+                     tunconf->tun_persist.reset(new TunBuilderClient::TunPersist(true, tunconf->retain_sd ? TunWrapObjRetain::RETAIN : TunWrapObjRetain::NO_RETAIN, config.builder));
+                 tun_factory = tunconf;
+@@ -453,34 +444,6 @@
+                 tunconf->load(opt);
+                 tun_factory = tunconf;
+             }
+-#elif defined(OPENVPN_PLATFORM_MAC) && !defined(OPENVPN_FORCE_TUN_NULL)
+-            {
+-                TunMac::ClientConfig::Ptr tunconf = TunMac::ClientConfig::new_obj();
+-                tunconf->tun_prop.layer = layer;
+-                tunconf->tun_prop.session_name = session_name;
+-                tunconf->tun_prop.google_dns_fallback = config.clientconf.googleDnsFallback;
+-                tunconf->tun_prop.dhcp_search_domains_as_split_domains = config.clientconf.dhcpSearchDomainsAsSplitDomains;
+-                if (tun_mtu)
+-                    tunconf->tun_prop.mtu = tun_mtu;
+-                tunconf->tun_prop.mtu_max = tun_mtu_max;
+-                tunconf->frame = frame;
+-                tunconf->stats = cli_stats;
+-                tunconf->stop = config.stop;
+-                if (config.clientconf.tunPersist)
+-                {
+-                    tunconf->tun_persist.reset(new TunMac::TunPersist(true, TunWrapObjRetain::NO_RETAIN, nullptr));
+-#ifndef OPENVPN_COMMAND_AGENT
+-                    /* remote_list is required by remote_bypass to work */
+-                    tunconf->tun_prop.remote_bypass = true;
+-                    tunconf->tun_prop.remote_list = remote_list;
+-#endif
+-                }
+-                client_lifecycle.reset(new MacLifeCycle);
+-#ifdef OPENVPN_COMMAND_AGENT
+-                tunconf->tun_setup_factory = UnixCommandAgent::new_agent(opt);
+-#endif
+-                tun_factory = tunconf;
+-            }
+ #elif defined(OPENVPN_PLATFORM_WIN) && !defined(OPENVPN_FORCE_TUN_NULL)
+             {
+                 TunWin::ClientConfig::Ptr tunconf = TunWin::ClientConfig::new_obj();
+@@ -652,9 +615,10 @@
+         if (opt.exists("secret"))
+             throw option_error(ERR_INVALID_OPTION_CRYPTO, "sorry, static key encryption mode (non-SSL/TLS) is not supported");
+ 
+-        // fragment option not supported
+-        if (opt.exists("fragment"))
+-            throw option_error(ERR_INVALID_OPTION_VAL, "sorry, 'fragment' directive is not supported, nor is connecting to a server that uses 'fragment' directive");
++        // fragment option - ignored with warning (same as official OpenVPN iOS app)
++        // Modern VPN protocols handle fragmentation at lower layers
++        // if (opt.exists("fragment"))
++        //     throw option_error(ERR_INVALID_OPTION_VAL, "sorry, 'fragment' directive is not supported, nor is connecting to a server that uses 'fragment' directive");
+ 
+         if (!opt.exists("client"))
+             throw option_error(ERR_INVALID_CONFIG, "Neither 'client' nor both 'tls-client' and 'pull' options declared. OpenVPN3 client only supports --client mode.");
+@@ -694,6 +658,7 @@
+         "disable-occ",
+         "engine",
+         "explicit-exit-notify", /* ignoring it in config does not break connection or functionality */
++        "fragment", /* Fragment is handled at lower network layers, ignored like official OpenVPN iOS app */
+         "group",
+         "ifconfig-nowarn", /* v3 does not do OCC checks */
+         "ip-win32",
+@@ -1024,7 +989,7 @@
+ 
+         auto nonTouchedOptions = [](const Option &option)
+         { return !option.touched() && !option.touched_lightly(); };
+-        showOptionsByFunction(opt, nonTouchedOptions, OPENVPN_UNUSED_OPTIONS, true, errors);
++        showOptionsByFunction(opt, nonTouchedOptions, OPENVPN_UNUSED_OPTIONS, false, errors);
+ 
+         errors.print_option_errors();
+     }

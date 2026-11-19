@@ -60,15 +60,29 @@ if [ -f "../../../patches/hostname-verification.patch" ]; then
     echo "✅ Hostname verification patch applied (fixes SSL verification with IP addresses)"
 fi
 
+# Apply max config line size increase (needed for long i1..i5 tag specs)
+if [ -f "../../../patches/max-config-line-size.patch" ]; then
+    git apply ../../../patches/max-config-line-size.patch
+    echo "✅ Max config line size patch applied (512 -> 16000)"
+fi
+
+# Remove macOS tun support (adapter targets iOS/tvOS only)
+if [ -f "../../../patches/remove-macos-tun-support.patch" ]; then
+    git apply ../../../patches/remove-macos-tun-support.patch
+    echo "✅ macOS tun support removal patch applied (iOS/tvOS only)"
+fi
+
 # Apply Windscribe anti-censorship features (FULL IMPLEMENTATION)
-# Copy pre-patched files with full anti-censorship implementation
-if [ -d "../../../patches/anticensorship-files" ]; then
-    cp ../../../patches/anticensorship-files/cliopt.hpp openvpn/client/cliopt.hpp 2>/dev/null
-    cp ../../../patches/anticensorship-files/tcpcli.hpp openvpn/transport/client/tcpcli.hpp 2>/dev/null
-    cp ../../../patches/anticensorship-files/udpcli.hpp openvpn/transport/client/udpcli.hpp 2>/dev/null
-    echo "✅ Windscribe anti-censorship features applied (UDP stuffing + TCP split/reset)"
+# Apply the patch file generated for the pinned OpenVPN 3 version
+if [ -f "../../../patches/anti-censorship-3.11.7.patch" ]; then
+    if git apply --check ../../../patches/anti-censorship-3.11.7.patch 2>/dev/null; then
+        git apply ../../../patches/anti-censorship-3.11.7.patch
+        echo "✅ Windscribe anti-censorship features applied (UDP stuffing + TCP split/reset + i1-i5 + Jc/Jmin/Jmax + junk-first)"
+    else
+        echo "⚠️  Anti-censorship patch does not apply cleanly (already applied or version mismatch)"
+    fi
 else
-    echo "⚠️  No anti-censorship patches found (directory removed)"
+    echo "⚠️  No anti-censorship patch found"
 fi
 
 cd ../../..
